@@ -1,4 +1,3 @@
-```js
 let cachedAccessToken = "";
 let tokenExpiresAt = 0;
 
@@ -682,4 +681,3 @@ module.exports = async function handler(req, res) {
     });
   }
 };
-```
