@@ -1,19 +1,57 @@
-let cachedAccessToken = "";
-let tokenExpiresAt = 0;
-
 const TOKEN_URL =
   "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
 
-const PARKING_AVAILABILITY_URL =
+const AVAILABILITY_URL =
   "https://tdx.transportdata.tw/api/basic/v1/Parking/OffStreet/ParkingAvailability/City/Kaohsiung?$format=JSON";
 
-const CAR_PARK_BASIC_URL =
+const BASIC_DATA_URL =
   "https://tdx.transportdata.tw/api/basic/v1/Parking/OffStreet/CarPark/City/Kaohsiung?$format=JSON";
 
-function sendJson(res, statusCode, payload, cacheControl = "no-store") {
+// 目前只做初步涵蓋率測試。
+// 部分商圈範圍較大，座標先作為測試中心點，正式上線前再逐一校正。
+const HOTSPOTS = [
+  {
+    id: "pier2",
+    name: "駁二藝術特區",
+    latitude: 22.619889,
+    longitude: 120.281722,
+  },
+  {
+    id: "ruifeng-night-market",
+    name: "瑞豐夜市",
+    latitude: 22.666113,
+    longitude: 120.29978,
+  },
+  {
+    id: "kaohsiung-arena",
+    name: "高雄巨蛋商圈",
+    latitude: 22.66917,
+    longitude: 120.30194,
+  },
+  {
+    id: "xinkujiang",
+    name: "新堀江商圈",
+    latitude: 22.6235,
+    longitude: 120.3015,
+  },
+  {
+    id: "sanduo",
+    name: "三多商圈",
+    latitude: 22.6138,
+    longitude: 120.3046,
+  },
+  {
+    id: "yancheng",
+    name: "鹽埕區",
+    latitude: 22.62694,
+    longitude: 120.28806,
+  },
+];
+
+function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Cache-Control", cacheControl);
+  res.setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify(payload, null, 2));
 }
 
@@ -32,28 +70,16 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
 }
 
 async function getAccessToken() {
-  const now = Date.now();
-
-  // Token 未過期時，使用 Vercel Function 記憶體快取。
-  if (cachedAccessToken && now < tokenExpiresAt - 5 * 60 * 1000) {
-    return {
-      accessToken: cachedAccessToken,
-      tokenSource: "memory-cache",
-    };
-  }
-
   const clientId = process.env.TDX_CLIENT_ID;
   const clientSecret = process.env.TDX_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
-    const error = new Error(
-      "Vercel 環境變數尚未設定完整，請確認 TDX_CLIENT_ID 與 TDX_CLIENT_SECRET。"
+    throw new Error(
+      "缺少 TDX_CLIENT_ID 或 TDX_CLIENT_SECRET 環境變數"
     );
-    error.code = "MISSING_ENVIRONMENT_VARIABLES";
-    throw error;
   }
 
-  const tokenResponse = await fetchWithTimeout(
+  const response = await fetchWithTimeout(
     TOKEN_URL,
     {
       method: "POST",
@@ -69,46 +95,54 @@ async function getAccessToken() {
     15000
   );
 
-  const tokenText = await tokenResponse.text();
+  const text = await response.text();
 
-  if (!tokenResponse.ok) {
-    const error = new Error("TDX Access Token 取得失敗");
-    error.code = "TDX_TOKEN_REQUEST_FAILED";
-    error.upstreamStatus = tokenResponse.status;
-    error.bodyPreview = tokenText.slice(0, 500);
-    throw error;
+  if (!response.ok) {
+    throw new Error(
+      `TDX Token 取得失敗，狀態碼：${response.status}，內容：${text.slice(
+        0,
+        300
+      )}`
+    );
   }
 
-  let tokenData;
+  const data = JSON.parse(text);
 
-  try {
-    tokenData = JSON.parse(tokenText);
-  } catch (parseError) {
-    const error = new Error("TDX Token 回傳內容不是有效 JSON");
-    error.code = "TDX_TOKEN_PARSE_FAILED";
-    error.bodyPreview = tokenText.slice(0, 500);
-    throw error;
+  if (!data.access_token) {
+    throw new Error("TDX Token 回傳內容缺少 access_token");
   }
 
-  if (!tokenData.access_token) {
-    const error = new Error("TDX Token 回傳內容缺少 access_token");
-    error.code = "TDX_TOKEN_MISSING";
-    error.bodyPreview = tokenText.slice(0, 500);
-    throw error;
-  }
-
-  const expiresInSeconds = Number(tokenData.expires_in) || 3600;
-
-  cachedAccessToken = tokenData.access_token;
-  tokenExpiresAt = Date.now() + expiresInSeconds * 1000;
-
-  return {
-    accessToken: cachedAccessToken,
-    tokenSource: "new-token",
-  };
+  return data.access_token;
 }
 
-function extractRecords(data, possibleKeys = []) {
+async function fetchTdxJson(url, accessToken) {
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+    30000
+  );
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(
+      `TDX 資料取得失敗，狀態碼：${response.status}，內容：${text.slice(
+        0,
+        300
+      )}`
+    );
+  }
+
+  return JSON.parse(text);
+}
+
+function extractArray(data, possibleKeys = []) {
   if (Array.isArray(data)) {
     return data;
   }
@@ -169,117 +203,74 @@ function readPosition(carPark) {
   };
 }
 
-function createAvailabilityStats(records) {
-  const stats = {
-    total: records.length,
-    positive: 0,
-    zero: 0,
-    negative: 0,
-    invalid: 0,
-    updatedWithin5Minutes: 0,
-    updatedWithin15Minutes: 0,
-    updatedWithin30Minutes: 0,
-    olderThan30Minutes: 0,
-    invalidDataCollectTime: 0,
-  };
+function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+  const earthRadiusMeters = 6371000;
+  const toRadians = (degrees) => (degrees * Math.PI) / 180;
 
-  const now = Date.now();
+  const latitudeDifference = toRadians(lat2 - lat1);
+  const longitudeDifference = toRadians(lon2 - lon1);
 
-  for (const record of records) {
-    const availableSpaces = Number(record.AvailableSpaces);
+  const a =
+    Math.sin(latitudeDifference / 2) ** 2 +
+    Math.cos(toRadians(lat1)) *
+      Math.cos(toRadians(lat2)) *
+      Math.sin(longitudeDifference / 2) ** 2;
 
-    if (!Number.isFinite(availableSpaces)) {
-      stats.invalid += 1;
-    } else if (availableSpaces > 0) {
-      stats.positive += 1;
-    } else if (availableSpaces === 0) {
-      stats.zero += 1;
-    } else {
-      stats.negative += 1;
-    }
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-    const collectTime = Date.parse(record.DataCollectTime);
-
-    if (!Number.isFinite(collectTime)) {
-      stats.invalidDataCollectTime += 1;
-      continue;
-    }
-
-    const ageMinutes = (now - collectTime) / 1000 / 60;
-
-    if (ageMinutes <= 5) {
-      stats.updatedWithin5Minutes += 1;
-    }
-
-    if (ageMinutes <= 15) {
-      stats.updatedWithin15Minutes += 1;
-    }
-
-    if (ageMinutes <= 30) {
-      stats.updatedWithin30Minutes += 1;
-    } else {
-      stats.olderThan30Minutes += 1;
-    }
-  }
-
-  return stats;
+  return Math.round(earthRadiusMeters * c);
 }
 
-function createDiagnostic(error) {
-  return {
-    name: error && error.name ? error.name : "UnknownError",
-    code: error && error.code ? error.code : "",
-    message: error && error.message ? error.message : "",
-    upstreamStatus:
-      error && error.upstreamStatus ? error.upstreamStatus : null,
-    bodyPreview:
-      error && error.bodyPreview ? error.bodyPreview : "",
-    causeCode:
-      error && error.cause && error.cause.code
-        ? error.cause.code
-        : "",
-    causeMessage:
-      error && error.cause && error.cause.message
-        ? error.cause.message
-        : "",
-  };
+function calculateAgeMinutes(dataCollectTime) {
+  const timestamp = Date.parse(dataCollectTime);
+
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+
+  return Number(((Date.now() - timestamp) / 1000 / 60).toFixed(1));
 }
 
-async function fetchTdxJson(url, accessToken, label) {
-  const response = await fetchWithTimeout(
-    url,
-    {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
-    30000
-  );
+function classifyParkingLot(record) {
+  const availableSpaces = Number(record.AvailableSpaces);
+  const serviceStatus = Number(record.ServiceStatus);
+  const fullStatus = Number(record.FullStatus);
+  const ageMinutes = calculateAgeMinutes(record.DataCollectTime);
 
-  const rawText = await response.text();
-  const responseBytes = Buffer.byteLength(rawText, "utf8");
-
-  if (!response.ok) {
-    const error = new Error(`${label} API 回傳狀態不是成功`);
-    error.code = "TDX_DATA_REQUEST_FAILED";
-    error.upstreamStatus = response.status;
-    error.bodyPreview = rawText.slice(0, 500);
-    throw error;
+  if (serviceStatus !== 1) {
+    return "service-unavailable";
   }
 
-  try {
-    return {
-      data: JSON.parse(rawText),
-      responseBytes,
-    };
-  } catch (parseError) {
-    const error = new Error(`${label} API 回傳內容無法解析為 JSON`);
-    error.code = "TDX_DATA_PARSE_FAILED";
-    error.bodyPreview = rawText.slice(0, 500);
-    throw error;
+  if (ageMinutes === null || ageMinutes > 15) {
+    return "stale";
   }
+
+  if (!Number.isFinite(availableSpaces)) {
+    return "invalid";
+  }
+
+  if (availableSpaces < 0) {
+    return "unreliable";
+  }
+
+  if (availableSpaces === 0 || fullStatus === 1) {
+    return "full";
+  }
+
+  return "available";
+}
+
+function getStatusRank(status) {
+  const ranking = {
+    available: 1,
+    full: 2,
+    unreliable: 3,
+    stale: 4,
+    "service-unavailable": 5,
+    invalid: 6,
+  };
+
+  return ranking[status] || 99;
 }
 
 module.exports = async function handler(req, res) {
@@ -302,30 +293,19 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { accessToken, tokenSource } = await getAccessToken();
+    const accessToken = await getAccessToken();
 
-    const [availabilityResult, basicResult] = await Promise.all([
-      fetchTdxJson(
-        PARKING_AVAILABILITY_URL,
-        accessToken,
-        "TDX 即時剩餘位"
-      ),
-      fetchTdxJson(
-        CAR_PARK_BASIC_URL,
-        accessToken,
-        "TDX 停車場基本資料"
-      ),
+    const [availabilityData, basicData] = await Promise.all([
+      fetchTdxJson(AVAILABILITY_URL, accessToken),
+      fetchTdxJson(BASIC_DATA_URL, accessToken),
     ]);
 
-    const availabilityRecords = extractRecords(
-      availabilityResult.data,
-      ["ParkingAvailabilities", "CarParkAvailabilities"]
-    );
+    const availabilityRecords = extractArray(availabilityData, [
+      "ParkingAvailabilities",
+      "CarParkAvailabilities",
+    ]);
 
-    const basicRecords = extractRecords(
-      basicResult.data,
-      ["CarParks"]
-    );
+    const basicRecords = extractArray(basicData, ["CarParks"]);
 
     const basicMap = new Map();
 
@@ -335,131 +315,130 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    let matchedRecords = 0;
-    let unmatchedAvailabilityRecords = 0;
-    let recordsWithCoordinates = 0;
-    let recordsWithAddress = 0;
-
-    const joinedSamples = [];
-    const negativeAvailabilitySamples = [];
+    const joinedRecords = [];
 
     for (const availability of availabilityRecords) {
-      const carPark = basicMap.get(availability.CarParkID);
+      const basic = basicMap.get(availability.CarParkID);
 
-      if (!carPark) {
-        unmatchedAvailabilityRecords += 1;
+      if (!basic) {
         continue;
       }
 
-      matchedRecords += 1;
-
-      const position = readPosition(carPark);
-      const address = readLocalizedText(carPark.Address);
+      const position = readPosition(basic);
 
       if (
-        position.latitude !== null &&
-        position.longitude !== null
+        position.latitude === null ||
+        position.longitude === null
       ) {
-        recordsWithCoordinates += 1;
+        continue;
       }
 
-      if (address) {
-        recordsWithAddress += 1;
-      }
-
-      const joinedRecord = {
+      joinedRecords.push({
         CarParkID: availability.CarParkID,
         CarParkName:
           readLocalizedText(availability.CarParkName) ||
-          readLocalizedText(carPark.CarParkName),
-        Address: address,
+          readLocalizedText(basic.CarParkName),
+        Address: readLocalizedText(basic.Address),
         Latitude: position.latitude,
         Longitude: position.longitude,
-        TotalSpaces: availability.TotalSpaces,
-        AvailableSpaces: availability.AvailableSpaces,
-        ServiceStatus: availability.ServiceStatus,
-        FullStatus: availability.FullStatus,
-        ChargeStatus: availability.ChargeStatus,
+        TotalSpaces: Number(availability.TotalSpaces),
+        AvailableSpaces: Number(availability.AvailableSpaces),
+        ServiceStatus: Number(availability.ServiceStatus),
+        FullStatus: Number(availability.FullStatus),
         DataCollectTime: availability.DataCollectTime,
-      };
-
-      if (joinedSamples.length < 5) {
-        joinedSamples.push(joinedRecord);
-      }
-
-      if (
-        Number(availability.AvailableSpaces) < 0 &&
-        negativeAvailabilitySamples.length < 10
-      ) {
-        negativeAvailabilitySamples.push(joinedRecord);
-      }
+        DataAgeMinutes: calculateAgeMinutes(
+          availability.DataCollectTime
+        ),
+        DataStatus: classifyParkingLot(availability),
+      });
     }
 
-    const combinedResponseBytes =
-      availabilityResult.responseBytes + basicResult.responseBytes;
+    const hotspotResults = HOTSPOTS.map((hotspot) => {
+      const nearbyCandidates = joinedRecords
+        .map((parkingLot) => ({
+          ...parkingLot,
+          DistanceMeters: calculateDistanceMeters(
+            hotspot.latitude,
+            hotspot.longitude,
+            parkingLot.Latitude,
+            parkingLot.Longitude
+          ),
+        }))
+        .filter((parkingLot) => parkingLot.DistanceMeters <= 1200)
+        .sort((a, b) => {
+          const rankDifference =
+            getStatusRank(a.DataStatus) -
+            getStatusRank(b.DataStatus);
 
-    sendJson(
-      res,
-      200,
-      {
-        ok: true,
-        testStage: "TDX 高雄停車資料第二階段：動態與靜態資料配對測試",
-        source: "交通部 TDX 運輸資料流通服務平臺",
-        city: "Kaohsiung",
-        tokenSource,
-        fetchedAt: new Date().toISOString(),
+          if (rankDifference !== 0) {
+            return rankDifference;
+          }
 
-        responseSize: {
-          availabilityBytes: availabilityResult.responseBytes,
-          availabilityKilobytes: Number(
-            (availabilityResult.responseBytes / 1024).toFixed(2)
-          ),
-          basicBytes: basicResult.responseBytes,
-          basicKilobytes: Number(
-            (basicResult.responseBytes / 1024).toFixed(2)
-          ),
-          combinedBytes: combinedResponseBytes,
-          combinedKilobytes: Number(
-            (combinedResponseBytes / 1024).toFixed(2)
-          ),
+          return a.DistanceMeters - b.DistanceMeters;
+        });
+
+      const countWithin = (distanceMeters) =>
+        nearbyCandidates.filter(
+          (parkingLot) =>
+            parkingLot.DistanceMeters <= distanceMeters
+        ).length;
+
+      const countAvailableWithin = (distanceMeters) =>
+        nearbyCandidates.filter(
+          (parkingLot) =>
+            parkingLot.DistanceMeters <= distanceMeters &&
+            parkingLot.DataStatus === "available"
+        ).length;
+
+      return {
+        id: hotspot.id,
+        name: hotspot.name,
+        testCenter: {
+          Latitude: hotspot.latitude,
+          Longitude: hotspot.longitude,
         },
+        parkingLotsWithin500Meters: countWithin(500),
+        parkingLotsWithin800Meters: countWithin(800),
+        parkingLotsWithin1200Meters: countWithin(1200),
+        reliableAvailableLotsWithin800Meters:
+          countAvailableWithin(800),
+        reliableAvailableLotsWithin1200Meters:
+          countAvailableWithin(1200),
+        passesInitialScreen:
+          countAvailableWithin(1200) >= 2,
+        topCandidates: nearbyCandidates.slice(0, 6),
+      };
+    });
 
-        recordCounts: {
-          availabilityRecords: availabilityRecords.length,
-          basicRecords: basicRecords.length,
-          matchedRecords,
-          unmatchedAvailabilityRecords,
-          recordsWithCoordinates,
-          recordsWithAddress,
-        },
+    const passedHotspots = hotspotResults.filter(
+      (hotspot) => hotspot.passesInitialScreen
+    ).length;
 
-        availabilityQuality:
-          createAvailabilityStats(availabilityRecords),
-
-        firstAvailabilityRecordKeys:
-          availabilityRecords[0]
-            ? Object.keys(availabilityRecords[0])
-            : [],
-
-        firstBasicRecordKeys:
-          basicRecords[0]
-            ? Object.keys(basicRecords[0])
-            : [],
-
-        joinedSamples,
-        negativeAvailabilitySamples,
+    sendJson(res, 200, {
+      ok: true,
+      testStage: "TDX 高雄熱門地點即時停車涵蓋率初步測試",
+      source: "交通部 TDX 運輸資料流通服務平臺",
+      coordinateNote:
+        "目前座標僅供初步涵蓋率測試，商圈範圍與正式搜尋中心點仍需後續校正。",
+      screeningRule:
+        "熱門地點半徑 1200 公尺內，至少有 2 個資料新鮮、空位數大於 0 的停車場，視為初步通過。",
+      summary: {
+        testedHotspots: HOTSPOTS.length,
+        passedHotspots,
+        failedHotspots: HOTSPOTS.length - passedHotspots,
+        overallInitialPass:
+          passedHotspots >= Math.ceil(HOTSPOTS.length * 0.6),
       },
-      "s-maxage=60, stale-while-revalidate=30"
-    );
+      hotspotResults,
+    });
   } catch (error) {
-    const diagnostic = createDiagnostic(error);
-
-    console.error("TDX parking test failed:", diagnostic);
-
     sendJson(res, 500, {
       ok: false,
-      message: "Vercel Function 呼叫 TDX 資料失敗",
-      diagnostic,
+      message: "熱門地點涵蓋率測試失敗",
+      diagnostic: {
+        name: error && error.name ? error.name : "UnknownError",
+        message: error && error.message ? error.message : "",
+      },
     });
   }
 };
