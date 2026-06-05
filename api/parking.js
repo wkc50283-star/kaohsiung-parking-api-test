@@ -7,6 +7,9 @@ const TOKEN_URL =
 const PARKING_AVAILABILITY_URL =
   "https://tdx.transportdata.tw/api/basic/v1/Parking/OffStreet/ParkingAvailability/City/Kaohsiung?$format=JSON";
 
+const CAR_PARK_BASIC_URL =
+  "https://tdx.transportdata.tw/api/basic/v1/Parking/OffStreet/CarPark/City/Kaohsiung?$format=JSON";
+
 function sendJson(res, statusCode, payload, cacheControl = "no-store") {
   res.statusCode = statusCode;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -14,7 +17,7 @@ function sendJson(res, statusCode, payload, cacheControl = "no-store") {
   res.end(JSON.stringify(payload, null, 2));
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -31,7 +34,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
 async function getAccessToken() {
   const now = Date.now();
 
-  // Token 尚未過期時，優先使用目前 Vercel Function 記憶體內的快取。
+  // Token 未過期時，使用 Vercel Function 記憶體快取。
   if (cachedAccessToken && now < tokenExpiresAt - 5 * 60 * 1000) {
     return {
       accessToken: cachedAccessToken,
@@ -105,20 +108,121 @@ async function getAccessToken() {
   };
 }
 
-function extractRecords(data) {
+function extractRecords(data, possibleKeys = []) {
   if (Array.isArray(data)) {
     return data;
   }
 
-  if (data && Array.isArray(data.value)) {
+  if (!data || typeof data !== "object") {
+    return [];
+  }
+
+  for (const key of possibleKeys) {
+    if (Array.isArray(data[key])) {
+      return data[key];
+    }
+  }
+
+  if (Array.isArray(data.value)) {
     return data.value;
   }
 
-  if (data && Array.isArray(data.ParkingAvailabilities)) {
-    return data.ParkingAvailabilities;
+  return [];
+}
+
+function readLocalizedText(value) {
+  if (typeof value === "string") {
+    return value;
   }
 
-  return [];
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+
+  return value.Zh_tw || value.ZhTW || value.En || value.Zh_cn || "";
+}
+
+function readPosition(carPark) {
+  const position =
+    carPark.CarParkPosition ||
+    carPark.Position ||
+    carPark.GeoPosition ||
+    {};
+
+  const latitude = Number(
+    position.PositionLat ??
+      position.Latitude ??
+      carPark.PositionLat ??
+      carPark.Latitude
+  );
+
+  const longitude = Number(
+    position.PositionLon ??
+      position.Longitude ??
+      carPark.PositionLon ??
+      carPark.Longitude
+  );
+
+  return {
+    latitude: Number.isFinite(latitude) ? latitude : null,
+    longitude: Number.isFinite(longitude) ? longitude : null,
+  };
+}
+
+function createAvailabilityStats(records) {
+  const stats = {
+    total: records.length,
+    positive: 0,
+    zero: 0,
+    negative: 0,
+    invalid: 0,
+    updatedWithin5Minutes: 0,
+    updatedWithin15Minutes: 0,
+    updatedWithin30Minutes: 0,
+    olderThan30Minutes: 0,
+    invalidDataCollectTime: 0,
+  };
+
+  const now = Date.now();
+
+  for (const record of records) {
+    const availableSpaces = Number(record.AvailableSpaces);
+
+    if (!Number.isFinite(availableSpaces)) {
+      stats.invalid += 1;
+    } else if (availableSpaces > 0) {
+      stats.positive += 1;
+    } else if (availableSpaces === 0) {
+      stats.zero += 1;
+    } else {
+      stats.negative += 1;
+    }
+
+    const collectTime = Date.parse(record.DataCollectTime);
+
+    if (!Number.isFinite(collectTime)) {
+      stats.invalidDataCollectTime += 1;
+      continue;
+    }
+
+    const ageMinutes = (now - collectTime) / 1000 / 60;
+
+    if (ageMinutes <= 5) {
+      stats.updatedWithin5Minutes += 1;
+    }
+
+    if (ageMinutes <= 15) {
+      stats.updatedWithin15Minutes += 1;
+    }
+
+    if (ageMinutes <= 30) {
+      stats.updatedWithin30Minutes += 1;
+    } else {
+      stats.olderThan30Minutes += 1;
+    }
+  }
+
+  return stats;
 }
 
 function createDiagnostic(error) {
@@ -139,6 +243,43 @@ function createDiagnostic(error) {
         ? error.cause.message
         : "",
   };
+}
+
+async function fetchTdxJson(url, accessToken, label) {
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+    30000
+  );
+
+  const rawText = await response.text();
+  const responseBytes = Buffer.byteLength(rawText, "utf8");
+
+  if (!response.ok) {
+    const error = new Error(`${label} API 回傳狀態不是成功`);
+    error.code = "TDX_DATA_REQUEST_FAILED";
+    error.upstreamStatus = response.status;
+    error.bodyPreview = rawText.slice(0, 500);
+    throw error;
+  }
+
+  try {
+    return {
+      data: JSON.parse(rawText),
+      responseBytes,
+    };
+  } catch (parseError) {
+    const error = new Error(`${label} API 回傳內容無法解析為 JSON`);
+    error.code = "TDX_DATA_PARSE_FAILED";
+    error.bodyPreview = rawText.slice(0, 500);
+    throw error;
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -163,72 +304,157 @@ module.exports = async function handler(req, res) {
   try {
     const { accessToken, tokenSource } = await getAccessToken();
 
-    const parkingResponse = await fetchWithTimeout(
-      PARKING_AVAILABILITY_URL,
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-      },
-      20000
+    const [availabilityResult, basicResult] = await Promise.all([
+      fetchTdxJson(
+        PARKING_AVAILABILITY_URL,
+        accessToken,
+        "TDX 即時剩餘位"
+      ),
+      fetchTdxJson(
+        CAR_PARK_BASIC_URL,
+        accessToken,
+        "TDX 停車場基本資料"
+      ),
+    ]);
+
+    const availabilityRecords = extractRecords(
+      availabilityResult.data,
+      ["ParkingAvailabilities", "CarParkAvailabilities"]
     );
 
-    const rawText = await parkingResponse.text();
-    const responseBytes = Buffer.byteLength(rawText, "utf8");
+    const basicRecords = extractRecords(
+      basicResult.data,
+      ["CarParks"]
+    );
 
-    if (!parkingResponse.ok) {
-      sendJson(res, 502, {
-        ok: false,
-        message: "TDX 停車資料 API 有回應，但狀態不是成功",
-        upstreamStatus: parkingResponse.status,
-        bodyPreview: rawText.slice(0, 500),
-      });
-      return;
+    const basicMap = new Map();
+
+    for (const carPark of basicRecords) {
+      if (carPark.CarParkID) {
+        basicMap.set(carPark.CarParkID, carPark);
+      }
     }
 
-    let data;
+    let matchedRecords = 0;
+    let unmatchedAvailabilityRecords = 0;
+    let recordsWithCoordinates = 0;
+    let recordsWithAddress = 0;
 
-    try {
-      data = JSON.parse(rawText);
-    } catch (parseError) {
-      sendJson(res, 502, {
-        ok: false,
-        message: "TDX 停車資料有回應，但內容無法解析為 JSON",
-        contentType: parkingResponse.headers.get("content-type"),
-        bodyPreview: rawText.slice(0, 500),
-      });
-      return;
+    const joinedSamples = [];
+    const negativeAvailabilitySamples = [];
+
+    for (const availability of availabilityRecords) {
+      const carPark = basicMap.get(availability.CarParkID);
+
+      if (!carPark) {
+        unmatchedAvailabilityRecords += 1;
+        continue;
+      }
+
+      matchedRecords += 1;
+
+      const position = readPosition(carPark);
+      const address = readLocalizedText(carPark.Address);
+
+      if (
+        position.latitude !== null &&
+        position.longitude !== null
+      ) {
+        recordsWithCoordinates += 1;
+      }
+
+      if (address) {
+        recordsWithAddress += 1;
+      }
+
+      const joinedRecord = {
+        CarParkID: availability.CarParkID,
+        CarParkName:
+          readLocalizedText(availability.CarParkName) ||
+          readLocalizedText(carPark.CarParkName),
+        Address: address,
+        Latitude: position.latitude,
+        Longitude: position.longitude,
+        TotalSpaces: availability.TotalSpaces,
+        AvailableSpaces: availability.AvailableSpaces,
+        ServiceStatus: availability.ServiceStatus,
+        FullStatus: availability.FullStatus,
+        ChargeStatus: availability.ChargeStatus,
+        DataCollectTime: availability.DataCollectTime,
+      };
+
+      if (joinedSamples.length < 5) {
+        joinedSamples.push(joinedRecord);
+      }
+
+      if (
+        Number(availability.AvailableSpaces) < 0 &&
+        negativeAvailabilitySamples.length < 10
+      ) {
+        negativeAvailabilitySamples.push(joinedRecord);
+      }
     }
 
-    const records = extractRecords(data);
-    const firstRecord = records[0] || null;
+    const combinedResponseBytes =
+      availabilityResult.responseBytes + basicResult.responseBytes;
 
     sendJson(
       res,
       200,
       {
         ok: true,
-        testStage: "TDX 高雄市路外停車場即時剩餘位最小測試",
+        testStage: "TDX 高雄停車資料第二階段：動態與靜態資料配對測試",
         source: "交通部 TDX 運輸資料流通服務平臺",
         city: "Kaohsiung",
         tokenSource,
-        upstreamStatus: parkingResponse.status,
         fetchedAt: new Date().toISOString(),
-        responseBytes,
-        responseKilobytes: Number((responseBytes / 1024).toFixed(2)),
-        topLevelType: Array.isArray(data) ? "array" : typeof data,
-        recordCount: records.length,
-        firstRecordKeys: firstRecord ? Object.keys(firstRecord) : [],
-        sampleRecords: records.slice(0, 3),
+
+        responseSize: {
+          availabilityBytes: availabilityResult.responseBytes,
+          availabilityKilobytes: Number(
+            (availabilityResult.responseBytes / 1024).toFixed(2)
+          ),
+          basicBytes: basicResult.responseBytes,
+          basicKilobytes: Number(
+            (basicResult.responseBytes / 1024).toFixed(2)
+          ),
+          combinedBytes: combinedResponseBytes,
+          combinedKilobytes: Number(
+            (combinedResponseBytes / 1024).toFixed(2)
+          ),
+        },
+
+        recordCounts: {
+          availabilityRecords: availabilityRecords.length,
+          basicRecords: basicRecords.length,
+          matchedRecords,
+          unmatchedAvailabilityRecords,
+          recordsWithCoordinates,
+          recordsWithAddress,
+        },
+
+        availabilityQuality:
+          createAvailabilityStats(availabilityRecords),
+
+        firstAvailabilityRecordKeys:
+          availabilityRecords[0]
+            ? Object.keys(availabilityRecords[0])
+            : [],
+
+        firstBasicRecordKeys:
+          basicRecords[0]
+            ? Object.keys(basicRecords[0])
+            : [],
+
+        joinedSamples,
+        negativeAvailabilitySamples,
       },
       "s-maxage=60, stale-while-revalidate=30"
     );
   } catch (error) {
     const diagnostic = createDiagnostic(error);
 
-    console.error("TDX parking request failed:", diagnostic);
+    console.error("TDX parking test failed:", diagnostic);
 
     sendJson(res, 500, {
       ok: false,
