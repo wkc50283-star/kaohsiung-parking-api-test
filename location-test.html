@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+  <title>目前位置定位測試｜高雄停車</title>
+
+  <style>
+    :root {
+      --background: #f4f8fb;
+      --card: #ffffff;
+      --primary: #1769a6;
+      --primary-light: #e9f4fb;
+      --text: #17212b;
+      --muted: #66788a;
+      --border: #d9e4ec;
+      --success: #167a3f;
+      --success-bg: #edf9f1;
+      --warning: #9a6500;
+      --warning-bg: #fff7df;
+      --danger: #b42318;
+      --danger-bg: #fff0ee;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px 16px 48px;
+      background: var(--background);
+      color: var(--text);
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        "Noto Sans TC",
+        sans-serif;
+    }
+
+    .page {
+      width: min(760px, 100%);
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      margin-bottom: 8px;
+      color: var(--primary);
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(28px, 6vw, 42px);
+      line-height: 1.18;
+    }
+
+    .intro {
+      margin: 14px 0 22px;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.7;
+    }
+
+    .card {
+      margin-top: 16px;
+      padding: 20px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: var(--card);
+      box-shadow: 0 10px 26px rgba(24, 69, 102, 0.07);
+    }
+
+    .card h2 {
+      margin: 0 0 14px;
+      font-size: 21px;
+    }
+
+    .privacy {
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: var(--primary-light);
+      color: #194f73;
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .system-row,
+    .result-row {
+      display: grid;
+      grid-template-columns: minmax(130px, 0.9fr) minmax(0, 1.4fr);
+      gap: 12px;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 16px;
+      line-height: 1.55;
+    }
+
+    .system-row:last-child,
+    .result-row:last-child {
+      border-bottom: 0;
+    }
+
+    .label {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .value {
+      overflow-wrap: anywhere;
+      font-weight: 800;
+    }
+
+    .status-box {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: var(--primary-light);
+      color: #194f73;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.6;
+    }
+
+    .status-box.success {
+      background: var(--success-bg);
+      color: var(--success);
+    }
+
+    .status-box.warning {
+      background: var(--warning-bg);
+      color: var(--warning);
+    }
+
+    .status-box.danger {
+      background: var(--danger-bg);
+      color: var(--danger);
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    button,
+    .link-button {
+      appearance: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 14px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 800;
+      text-decoration: none;
+    }
+
+    button.primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    button.secondary,
+    .link-button {
+      border: 1px solid var(--border);
+      background: white;
+      color: var(--primary);
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.6;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .note {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    @media (max-width: 560px) {
+      body {
+        padding: 18px 12px 36px;
+      }
+
+      .card {
+        padding: 16px;
+        border-radius: 17px;
+      }
+
+      .system-row,
+      .result-row {
+        grid-template-columns: 1fr;
+        gap: 3px;
+      }
+
+      button,
+      .link-button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="page">
+    <div class="eyebrow">高雄停車｜功能測試</div>
+
+    <h1>使用目前位置</h1>
+
+    <p class="intro">
+      這一頁只測試瀏覽器能否取得你目前的位置。
+      暫時不會查詢停車場，也不會呼叫 TDX API。
+    </p>
+
+    <section class="card">
+      <h2>隱私說明</h2>
+
+      <div class="privacy">
+        只有在你主動按下按鈕後，瀏覽器才會詢問是否允許定位。
+        本測試只取得一次位置，不會持續追蹤、不會保存紀錄，也不會把座標傳回伺服器。
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>瀏覽器環境檢查</h2>
+
+      <div class="system-row">
+        <div class="label">安全連線</div>
+        <div id="secureContext" class="value">檢查中……</div>
+      </div>
+
+      <div class="system-row">
+        <div class="label">瀏覽器定位功能</div>
+        <div id="geolocationSupport" class="value">檢查中……</div>
+      </div>
+
+      <div class="system-row">
+        <div class="label">目前定位權限</div>
+        <div id="permissionState" class="value">檢查中……</div>
+      </div>
+
+      <div id="statusBox" class="status-box">
+        尚未要求定位。請按下方按鈕開始測試。
+      </div>
+
+      <div class="button-row">
+        <button id="locateButton" class="primary" type="button">
+          📍 取得目前位置
+        </button>
+
+        <button id="clearButton" class="secondary" type="button">
+          清除測試結果
+        </button>
+      </div>
+    </section>
+
+    <section id="resultCard" class="card hidden">
+      <h2>定位結果</h2>
+
+      <div class="result-row">
+        <div class="label">緯度</div>
+        <div id="latitude" class="value">—</div>
+      </div>
+
+      <div class="result-row">
+        <div class="label">經度</div>
+        <div id="longitude" class="value">—</div>
+      </div>
+
+      <div class="result-row">
+        <div class="label">定位誤差範圍</div>
+        <div id="accuracy" class="value">—</div>
+      </div>
+
+      <div class="result-row">
+        <div class="label">取得時間</div>
+        <div id="timestamp" class="value">—</div>
+      </div>
+
+      <div id="accuracyMessage" class="status-box">
+        尚未取得定位資料。
+      </div>
+
+      <div class="button-row">
+        <a
+          id="mapLink"
+          class="link-button hidden"
+          href="#"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          🧭 在 Google 地圖查看位置
+        </a>
+      </div>
+
+      <p class="note">
+        點選 Google 地圖按鈕後，座標才會傳送給 Google 地圖。
+        本測試頁本身不會保存你的座標。
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const secureContextElement =
+      document.getElementById("secureContext");
+
+    const geolocationSupportElement =
+      document.getElementById("geolocationSupport");
+
+    const permissionStateElement =
+      document.getElementById("permissionState");
+
+    const statusBox =
+      document.getElementById("statusBox");
+
+    const locateButton =
+      document.getElementById("locateButton");
+
+    const clearButton =
+      document.getElementById("clearButton");
+
+    const resultCard =
+      document.getElementById("resultCard");
+
+    const latitudeElement =
+      document.getElementById("latitude");
+
+    const longitudeElement =
+      document.getElementById("longitude");
+
+    const accuracyElement =
+      document.getElementById("accuracy");
+
+    const timestampElement =
+      document.getElementById("timestamp");
+
+    const accuracyMessage =
+      document.getElementById("accuracyMessage");
+
+    const mapLink =
+      document.getElementById("mapLink");
+
+    function updateStatus(message, type = "") {
+      statusBox.textContent = message;
+      statusBox.className = "status-box";
+
+      if (type) {
+        statusBox.classList.add(type);
+      }
+    }
+
+    function clearResult() {
+      resultCard.classList.add("hidden");
+      mapLink.classList.add("hidden");
+      mapLink.href = "#";
+
+      latitudeElement.textContent = "—";
+      longitudeElement.textContent = "—";
+      accuracyElement.textContent = "—";
+      timestampElement.textContent = "—";
+
+      updateStatus(
+        "尚未要求定位。請按下方按鈕開始測試。"
+      );
+    }
+
+    function translatePermissionState(state) {
+      const states = {
+        granted: "已允許",
+        denied: "已拒絕",
+        prompt: "尚未決定，按下按鈕後瀏覽器會詢問",
+      };
+
+      return states[state] || state || "無法取得";
+    }
+
+    async function inspectEnvironment() {
+      secureContextElement.textContent =
+        window.isSecureContext
+          ? "✅ 已使用 HTTPS 安全連線"
+          : "❌ 不是安全連線，定位功能可能無法使用";
+
+      geolocationSupportElement.textContent =
+        "geolocation" in navigator
+          ? "✅ 瀏覽器支援定位"
+          : "❌ 瀏覽器不支援定位";
+
+      if (
+        !navigator.permissions ||
+        !navigator.permissions.query
+      ) {
+        permissionStateElement.textContent =
+          "瀏覽器未提供預先查詢功能，按下按鈕後再確認";
+        return;
+      }
+
+      try {
+        const permission = await navigator.permissions.query({
+          name: "geolocation",
+        });
+
+        permissionStateElement.textContent =
+          translatePermissionState(permission.state);
+
+        permission.addEventListener("change", () => {
+          permissionStateElement.textContent =
+            translatePermissionState(permission.state);
+        });
+      } catch (error) {
+        permissionStateElement.textContent =
+          "瀏覽器未提供預先查詢功能，按下按鈕後再確認";
+      }
+    }
+
+    function handleSuccess(position) {
+      const latitude = position.coords.latitude;
+      const longitude = position.coords.longitude;
+      const accuracy = position.coords.accuracy;
+
+      latitudeElement.textContent =
+        latitude.toFixed(6);
+
+      longitudeElement.textContent =
+        longitude.toFixed(6);
+
+      accuracyElement.textContent =
+        `約 ± ${Math.round(accuracy)} 公尺`;
+
+      timestampElement.textContent =
+        new Date(position.timestamp).toLocaleString(
+          "zh-TW"
+        );
+
+      mapLink.href =
+        `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+
+      mapLink.classList.remove("hidden");
+      resultCard.classList.remove("hidden");
+
+      if (accuracy <= 100) {
+        accuracyMessage.textContent =
+          "✅ 定位精準度良好，可以進入附近停車場排序測試。";
+
+        accuracyMessage.className =
+          "status-box success";
+      } else if (accuracy <= 500) {
+        accuracyMessage.textContent =
+          "⚠️ 已取得位置，但誤差範圍較大。可先作為附近搜尋參考。";
+
+        accuracyMessage.className =
+          "status-box warning";
+      } else {
+        accuracyMessage.textContent =
+          "⚠️ 定位誤差過大，建議稍後再試，或改用目的地搜尋。";
+
+        accuracyMessage.className =
+          "status-box danger";
+      }
+
+      updateStatus(
+        "✅ 已成功取得目前位置。本頁沒有把座標傳回伺服器。",
+        "success"
+      );
+
+      locateButton.disabled = false;
+      locateButton.textContent = "📍 重新取得目前位置";
+    }
+
+    function handleError(error) {
+      const messages = {
+        1:
+          "你拒絕了定位權限。可以改用目的地搜尋，或到瀏覽器設定重新允許定位。",
+        2:
+          "目前無法取得位置。請確認裝置定位功能與網路狀態後再試一次。",
+        3:
+          "定位等待時間過久。請稍後再試，或改用目的地搜尋。",
+      };
+
+      updateStatus(
+        `❌ ${messages[error.code] || "定位失敗，請稍後再試。"}`,
+        "danger"
+      );
+
+      locateButton.disabled = false;
+      locateButton.textContent = "📍 再試一次";
+    }
+
+    locateButton.addEventListener("click", () => {
+      if (!window.isSecureContext) {
+        updateStatus(
+          "❌ 目前不是 HTTPS 安全連線，瀏覽器可能不允許定位。",
+          "danger"
+        );
+        return;
+      }
+
+      if (!("geolocation" in navigator)) {
+        updateStatus(
+          "❌ 這個瀏覽器不支援定位功能。",
+          "danger"
+        );
+        return;
+      }
+
+      locateButton.disabled = true;
+      locateButton.textContent = "正在取得位置……";
+
+      updateStatus(
+        "瀏覽器正在取得你目前的位置，請稍候……"
+      );
+
+      navigator.geolocation.getCurrentPosition(
+        handleSuccess,
+        handleError,
+        {
+          enableHighAccuracy: false,
+          timeout: 8000,
+          maximumAge: 60000,
+        }
+      );
+    });
+
+    clearButton.addEventListener("click", clearResult);
+
+    inspectEnvironment();
+  </script>
+</body>
+</html>
