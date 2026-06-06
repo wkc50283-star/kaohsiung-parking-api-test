@@ -1,0 +1,1130 @@
+可以。這次不要再做臨時測試版，直接把 `nearby-test.html` 寫成結構完整、可實際操作的正式規格版本。
+
+但先把界線講清楚：
+
+> 這份程式碼可以正式執行「使用目前位置搜尋附近停車場」。
+> 目前仍放在獨立頁面驗證，不接進正式首頁。
+> 原因是 TDX 的 `SpaceType` 官方定義尚未確認，後端目前仍暫時採用最上層汽車格位資料。
+
+# 一、確認檔名
+
+檔案名稱輸入：
+
+```text
+nearby-test.html
+```
+
+位置要放在專案最外層，不要放進 `api` 資料夾。
+
+正確結構：
+
+```text
+kaohsiung-parking-api-test
+├── api
+│   ├── nearby-data.js
+│   ├── cleaning.js
+│   └── parking.js
+├── index.html
+├── location-test.html
+└── nearby-test.html
+```
+
+# 二、貼上完整正式程式碼
+
+把編輯區原本的：
+
+```text
+Enter file contents here
+```
+
+完整刪除，再貼上以下全部內容。
+
+```html
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+
+  <meta
+    name="description"
+    content="使用目前位置搜尋附近停車場，查看高雄市路外停車場即時剩餘空位、距離與導航。"
+  />
+
+  <title>搜尋附近停車場｜高雄停車</title>
+
+  <style>
+    :root {
+      --background: #f4f8fb;
+      --card: #ffffff;
+      --primary: #1769a6;
+      --primary-dark: #10598d;
+      --primary-light: #eaf4fb;
+      --text: #17212b;
+      --muted: #68798a;
+      --border: #d8e4ec;
+      --success: #167a3f;
+      --success-bg: #edf9f1;
+      --warning: #946000;
+      --warning-bg: #fff7df;
+      --danger: #b42318;
+      --danger-bg: #fff0ee;
+      --shadow: 0 10px 28px rgba(24, 69, 102, 0.07);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px 14px 48px;
+      background: var(--background);
+      color: var(--text);
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        "Noto Sans TC",
+        sans-serif;
+    }
+
+    button,
+    a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .page {
+      width: min(860px, 100%);
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      margin-bottom: 8px;
+      color: var(--primary);
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 7vw, 44px);
+      line-height: 1.18;
+    }
+
+    .intro {
+      margin: 14px 0 20px;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.7;
+    }
+
+    .card {
+      margin-top: 16px;
+      padding: 17px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 22px;
+      line-height: 1.4;
+    }
+
+    .privacy-box {
+      padding: 14px 15px;
+      border-radius: 14px;
+      background: var(--primary-light);
+      color: #194f73;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .note {
+      margin: 7px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .status-box {
+      margin-top: 14px;
+      padding: 14px 15px;
+      border-radius: 14px;
+      background: var(--primary-light);
+      color: #194f73;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.65;
+    }
+
+    .status-box.success {
+      background: var(--success-bg);
+      color: var(--success);
+    }
+
+    .status-box.warning {
+      background: var(--warning-bg);
+      color: var(--warning);
+    }
+
+    .status-box.danger {
+      background: var(--danger-bg);
+      color: var(--danger);
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    button,
+    .navigation-link {
+      appearance: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 50px;
+      padding: 0 17px;
+      border-radius: 14px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 800;
+      text-decoration: none;
+      transition:
+        transform 0.15s ease,
+        background 0.15s ease,
+        opacity 0.15s ease;
+    }
+
+    button {
+      border: 0;
+    }
+
+    button.primary,
+    .navigation-link {
+      background: var(--primary);
+      color: #ffffff;
+    }
+
+    button.primary:hover,
+    .navigation-link:hover {
+      background: var(--primary-dark);
+    }
+
+    button:active,
+    .navigation-link:active {
+      transform: scale(0.98);
+    }
+
+    button.secondary {
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: var(--primary);
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.62;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .summary-grid,
+    .parking-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+      margin-top: 13px;
+    }
+
+    .summary-item,
+    .parking-stat {
+      padding: 11px;
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      background: #ffffff;
+    }
+
+    .summary-label,
+    .parking-stat-label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .summary-value,
+    .parking-stat-value {
+      margin-top: 5px;
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 900;
+      overflow-wrap: anywhere;
+    }
+
+    .available {
+      color: var(--success);
+    }
+
+    .parking-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .parking-card {
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 17px;
+      background: #ffffff;
+    }
+
+    .parking-card.recommended {
+      border: 2px solid #3f9f61;
+      background: #fbfffc;
+    }
+
+    .rank {
+      display: inline-flex;
+      align-items: center;
+      min-height: 29px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: var(--primary-light);
+      color: var(--primary);
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .rank.first {
+      background: var(--success-bg);
+      color: var(--success);
+    }
+
+    .parking-name {
+      margin-top: 10px;
+      font-size: 21px;
+      font-weight: 900;
+      line-height: 1.35;
+    }
+
+    .parking-address {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .navigation-link {
+      width: 100%;
+      margin-top: 13px;
+    }
+
+    .other-title {
+      margin-top: 23px;
+      font-size: 19px;
+      font-weight: 900;
+    }
+
+    .other-card {
+      padding: 13px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .other-card:last-child {
+      border-bottom: 0;
+    }
+
+    .other-name {
+      font-size: 17px;
+      font-weight: 900;
+    }
+
+    .other-detail {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .other-link {
+      display: inline-block;
+      margin-top: 7px;
+      color: var(--primary);
+      font-size: 14px;
+      font-weight: 800;
+      text-decoration: none;
+    }
+
+    @media (max-width: 560px) {
+      body {
+        padding: 17px 11px 36px;
+      }
+
+      .card {
+        padding: 15px;
+        border-radius: 17px;
+      }
+
+      .button-row button {
+        width: 100%;
+      }
+
+      .summary-grid,
+      .parking-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="page">
+    <div class="eyebrow">高雄停車｜使用目前位置</div>
+
+    <h1>搜尋我附近的停車場</h1>
+
+    <p class="intro">
+      按下按鈕後，網站會取得一次目前位置，並在你的裝置內計算附近停車場距離。
+      系統會優先列出仍有可靠即時空位的停車場，協助你快速決定往哪裡開。
+    </p>
+
+    <section class="card">
+      <h2>隱私說明</h2>
+
+      <div class="privacy-box">
+        只有在你主動按下按鈕後，瀏覽器才會詢問是否允許定位。
+        本頁只取得一次位置，不會持續追蹤、不會保存定位紀錄，也不會把你的座標傳回伺服器。
+        停車場距離會直接在你的瀏覽器內計算。
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>開始搜尋</h2>
+
+      <p class="note">
+        顯示的是直線距離估算，不是實際開車距離。
+        即時車位仍可能因現場車輛進出而變動，請以現場狀況為準。
+      </p>
+
+      <div
+        id="statusBox"
+        class="status-box"
+        role="status"
+        aria-live="polite"
+      >
+        尚未開始查詢。請按下方按鈕取得目前位置。
+      </div>
+
+      <div class="button-row">
+        <button
+          id="searchButton"
+          class="primary"
+          type="button"
+        >
+          📍 使用目前位置搜尋附近停車場
+        </button>
+
+        <button
+          id="clearButton"
+          class="secondary"
+          type="button"
+        >
+          清除搜尋結果
+        </button>
+      </div>
+    </section>
+
+    <section id="summaryCard" class="card hidden">
+      <h2>本次查詢摘要</h2>
+
+      <div class="summary-grid">
+        <div class="summary-item">
+          <div class="summary-label">定位誤差範圍</div>
+          <div id="accuracyValue" class="summary-value">—</div>
+        </div>
+
+        <div class="summary-item">
+          <div class="summary-label">清洗後停車場資料</div>
+          <div id="recordCountValue" class="summary-value">—</div>
+        </div>
+
+        <div class="summary-item">
+          <div class="summary-label">附近有空位停車場</div>
+          <div id="nearbyCountValue" class="summary-value">—</div>
+        </div>
+
+        <div class="summary-item">
+          <div class="summary-label">TDX 最新資料時間</div>
+          <div id="updatedTimeValue" class="summary-value">—</div>
+        </div>
+      </div>
+
+      <p id="rangeNote" class="note"></p>
+    </section>
+
+    <section id="resultsCard" class="card hidden">
+      <h2>附近停車建議</h2>
+
+      <p class="note">
+        第一筆是目前建議，第二與第三筆為備案。
+        排序會優先考量距離，再參考即時資料更新時間與剩餘空位。
+      </p>
+
+      <div id="topParkingList" class="parking-list"></div>
+
+      <div id="otherSection" class="hidden">
+        <div class="other-title">其他附近選項</div>
+        <div id="otherParkingList"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    "use strict";
+
+    const DATA_URL = "/api/nearby-data";
+
+    const KAOHSIUNG_BOUNDS = {
+      minimumLatitude: 22.45,
+      maximumLatitude: 23.50,
+      minimumLongitude: 120.10,
+      maximumLongitude: 121.10,
+    };
+
+    const searchButton =
+      document.getElementById("searchButton");
+
+    const clearButton =
+      document.getElementById("clearButton");
+
+    const statusBox =
+      document.getElementById("statusBox");
+
+    const summaryCard =
+      document.getElementById("summaryCard");
+
+    const resultsCard =
+      document.getElementById("resultsCard");
+
+    const accuracyValue =
+      document.getElementById("accuracyValue");
+
+    const recordCountValue =
+      document.getElementById("recordCountValue");
+
+    const nearbyCountValue =
+      document.getElementById("nearbyCountValue");
+
+    const updatedTimeValue =
+      document.getElementById("updatedTimeValue");
+
+    const rangeNote =
+      document.getElementById("rangeNote");
+
+    const topParkingList =
+      document.getElementById("topParkingList");
+
+    const otherSection =
+      document.getElementById("otherSection");
+
+    const otherParkingList =
+      document.getElementById("otherParkingList");
+
+    function setStatus(message, type = "") {
+      statusBox.textContent = message;
+      statusBox.className = "status-box";
+
+      if (type) {
+        statusBox.classList.add(type);
+      }
+    }
+
+    function resetResults() {
+      summaryCard.classList.add("hidden");
+      resultsCard.classList.add("hidden");
+      otherSection.classList.add("hidden");
+
+      topParkingList.innerHTML = "";
+      otherParkingList.innerHTML = "";
+
+      accuracyValue.textContent = "—";
+      recordCountValue.textContent = "—";
+      nearbyCountValue.textContent = "—";
+      updatedTimeValue.textContent = "—";
+      rangeNote.textContent = "";
+
+      setStatus(
+        "尚未開始查詢。請按下方按鈕取得目前位置。"
+      );
+
+      searchButton.disabled = false;
+
+      searchButton.textContent =
+        "📍 使用目前位置搜尋附近停車場";
+    }
+
+    function toRadians(value) {
+      return (value * Math.PI) / 180;
+    }
+
+    function calculateDistanceMeters(
+      latitude1,
+      longitude1,
+      latitude2,
+      longitude2
+    ) {
+      const earthRadius = 6371000;
+
+      const latitudeDifference =
+        toRadians(latitude2 - latitude1);
+
+      const longitudeDifference =
+        toRadians(longitude2 - longitude1);
+
+      const a =
+        Math.sin(latitudeDifference / 2) *
+          Math.sin(latitudeDifference / 2) +
+        Math.cos(toRadians(latitude1)) *
+          Math.cos(toRadians(latitude2)) *
+          Math.sin(longitudeDifference / 2) *
+          Math.sin(longitudeDifference / 2);
+
+      const c =
+        2 * Math.atan2(
+          Math.sqrt(a),
+          Math.sqrt(1 - a)
+        );
+
+      return earthRadius * c;
+    }
+
+    function formatDistance(distanceMeters) {
+      if (distanceMeters < 1000) {
+        return `${Math.round(distanceMeters)} 公尺`;
+      }
+
+      return `${(distanceMeters / 1000).toFixed(1)} 公里`;
+    }
+
+    function formatDateTime(value) {
+      const timestamp = Date.parse(value);
+
+      if (!Number.isFinite(timestamp)) {
+        return "無法判斷";
+      }
+
+      return new Date(timestamp).toLocaleString("zh-TW");
+    }
+
+    function formatAgeMinutes(value) {
+      const numberValue = Number(value);
+
+      if (!Number.isFinite(numberValue)) {
+        return "無法判斷";
+      }
+
+      if (numberValue < 1) {
+        return "1 分鐘內";
+      }
+
+      return `約 ${Math.round(numberValue)} 分鐘前`;
+    }
+
+    function isWithinKaohsiung(latitude, longitude) {
+      return (
+        latitude >= KAOHSIUNG_BOUNDS.minimumLatitude &&
+        latitude <= KAOHSIUNG_BOUNDS.maximumLatitude &&
+        longitude >= KAOHSIUNG_BOUNDS.minimumLongitude &&
+        longitude <= KAOHSIUNG_BOUNDS.maximumLongitude
+      );
+    }
+
+    function getNavigationUrl(parkingLot) {
+      const destination =
+        `${parkingLot.latitude},${parkingLot.longitude}`;
+
+      return (
+        "https://www.google.com/maps/dir/?api=1" +
+        `&destination=${encodeURIComponent(destination)}` +
+        "&travelmode=driving"
+      );
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function renderTopParkingCard(parkingLot, index) {
+      const labels = [
+        "第一推薦",
+        "第二備案",
+        "第三備案",
+      ];
+
+      const rankClass =
+        index === 0 ? "rank first" : "rank";
+
+      const cardClass =
+        index === 0
+          ? "parking-card recommended"
+          : "parking-card";
+
+      return `
+        <article class="${cardClass}">
+          <div class="${rankClass}">
+            ${labels[index] || "附近選項"}
+          </div>
+
+          <div class="parking-name">
+            ${escapeHtml(parkingLot.name)}
+          </div>
+
+          <div class="parking-address">
+            ${escapeHtml(parkingLot.address || "地址資料不足")}
+          </div>
+
+          <div class="parking-grid">
+            <div class="parking-stat">
+              <div class="parking-stat-label">
+                即時剩餘空位
+              </div>
+
+              <div class="parking-stat-value available">
+                ${parkingLot.availableSpaces} 格
+              </div>
+            </div>
+
+            <div class="parking-stat">
+              <div class="parking-stat-label">
+                距離目前位置
+              </div>
+
+              <div class="parking-stat-value">
+                約 ${formatDistance(parkingLot.distanceMeters)}
+              </div>
+            </div>
+
+            <div class="parking-stat">
+              <div class="parking-stat-label">
+                資料更新時間
+              </div>
+
+              <div class="parking-stat-value">
+                ${formatAgeMinutes(parkingLot.dataAgeMinutes)}
+              </div>
+            </div>
+
+            <div class="parking-stat">
+              <div class="parking-stat-label">
+                總格位
+              </div>
+
+              <div class="parking-stat-value">
+                ${parkingLot.totalSpaces} 格
+              </div>
+            </div>
+          </div>
+
+          <a
+            class="navigation-link"
+            href="${getNavigationUrl(parkingLot)}"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            🧭 開始導航
+          </a>
+        </article>
+      `;
+    }
+
+    function renderOtherParkingCard(parkingLot) {
+      return `
+        <article class="other-card">
+          <div class="other-name">
+            ${escapeHtml(parkingLot.name)}
+          </div>
+
+          <div class="other-detail">
+            距離約 ${formatDistance(parkingLot.distanceMeters)}
+            ｜剩餘 ${parkingLot.availableSpaces} 格
+            ｜更新 ${formatAgeMinutes(parkingLot.dataAgeMinutes)}
+          </div>
+
+          <a
+            class="other-link"
+            href="${getNavigationUrl(parkingLot)}"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            🧭 開始導航
+          </a>
+        </article>
+      `;
+    }
+
+    function chooseSearchRadius(parkingLots) {
+      const radiusOptions = [500, 800, 1200, 3000];
+
+      for (const radius of radiusOptions) {
+        const matches = parkingLots.filter(
+          (parkingLot) =>
+            parkingLot.distanceMeters <= radius
+        );
+
+        if (matches.length >= 3) {
+          return {
+            radius,
+            matches,
+          };
+        }
+      }
+
+      return {
+        radius: 3000,
+
+        matches: parkingLots.filter(
+          (parkingLot) =>
+            parkingLot.distanceMeters <= 3000
+        ),
+      };
+    }
+
+    async function loadParkingData() {
+      const response = await fetch(DATA_URL, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `停車資料取得失敗，狀態碼：${response.status}`
+        );
+      }
+
+      const data = await response.json();
+
+      if (
+        !data.ok ||
+        !Array.isArray(data.parkingLots)
+      ) {
+        throw new Error("停車資料格式不正確");
+      }
+
+      return data;
+    }
+
+    function handlePositionError(error) {
+      const messages = {
+        1:
+          "你拒絕了定位權限。請改用目的地搜尋，或到瀏覽器設定重新允許定位。",
+        2:
+          "目前無法取得位置。請確認裝置定位功能與網路狀態後再試一次。",
+        3:
+          "定位等待時間過久。請稍後再試，或改用目的地搜尋。",
+      };
+
+      setStatus(
+        `❌ ${messages[error.code] || "定位失敗，請稍後再試。"}`,
+        "danger"
+      );
+
+      searchButton.disabled = false;
+      searchButton.textContent = "📍 再試一次";
+    }
+
+    async function handlePositionSuccess(position) {
+      try {
+        const latitude =
+          Number(position.coords.latitude);
+
+        const longitude =
+          Number(position.coords.longitude);
+
+        const accuracy =
+          Number(position.coords.accuracy);
+
+        if (!isWithinKaohsiung(latitude, longitude)) {
+          setStatus(
+            "⚠️ 目前位置可能不在高雄市範圍內。本功能第一階段僅提供高雄市附近停車場查詢。",
+            "warning"
+          );
+
+          searchButton.disabled = false;
+
+          searchButton.textContent =
+            "📍 重新取得目前位置";
+
+          return;
+        }
+
+        setStatus(
+          "已取得目前位置，正在讀取清洗後的停車場快取資料……"
+        );
+
+        const data =
+          await loadParkingData();
+
+        const availableParkingLots =
+          data.parkingLots
+            .filter(
+              (parkingLot) =>
+                parkingLot.status === "available" &&
+                Number(parkingLot.availableSpaces) > 0 &&
+                Number.isFinite(
+                  Number(parkingLot.latitude)
+                ) &&
+                Number.isFinite(
+                  Number(parkingLot.longitude)
+                )
+            )
+            .map((parkingLot) => ({
+              ...parkingLot,
+
+              distanceMeters:
+                calculateDistanceMeters(
+                  latitude,
+                  longitude,
+                  Number(parkingLot.latitude),
+                  Number(parkingLot.longitude)
+                ),
+            }))
+            .sort((first, second) => {
+              if (
+                first.distanceMeters !==
+                second.distanceMeters
+              ) {
+                return (
+                  first.distanceMeters -
+                  second.distanceMeters
+                );
+              }
+
+              if (
+                first.dataAgeMinutes !==
+                second.dataAgeMinutes
+              ) {
+                return (
+                  first.dataAgeMinutes -
+                  second.dataAgeMinutes
+                );
+              }
+
+              return (
+                second.availableSpaces -
+                first.availableSpaces
+              );
+            });
+
+        const searchResult =
+          chooseSearchRadius(
+            availableParkingLots
+          );
+
+        const nearbyParkingLots =
+          searchResult.matches;
+
+        accuracyValue.textContent =
+          `約 ± ${Math.round(accuracy)} 公尺`;
+
+        recordCountValue.textContent =
+          `${data.stats?.cleanRecords ?? data.parkingLots.length} 筆`;
+
+        nearbyCountValue.textContent =
+          `${nearbyParkingLots.length} 筆`;
+
+        updatedTimeValue.textContent =
+          formatDateTime(
+            data.dataTimeRange?.newestDataCollectTime
+          );
+
+        rangeNote.textContent =
+          searchResult.radius <= 1200
+            ? `目前優先搜尋範圍：直線距離約 ${searchResult.radius} 公尺內。`
+            : "1.2 公里內選項不足，已暫時擴大搜尋至 3 公里內。";
+
+        summaryCard.classList.remove("hidden");
+
+        if (accuracy > 500) {
+          setStatus(
+            "⚠️ 已取得目前位置，但定位誤差較大。以下結果只能作為附近停車參考。",
+            "warning"
+          );
+        }
+
+        if (nearbyParkingLots.length === 0) {
+          setStatus(
+            "⚠️ 附近 3 公里內暫時沒有可靠且仍有空位的停車場資料。可以改用目的地搜尋或 Google 地圖查看其他選項。",
+            "warning"
+          );
+
+          resultsCard.classList.add("hidden");
+
+          searchButton.disabled = false;
+
+          searchButton.textContent =
+            "📍 重新搜尋附近停車場";
+
+          return;
+        }
+
+        const topThree =
+          nearbyParkingLots.slice(0, 3);
+
+        const otherParkingLots =
+          nearbyParkingLots.slice(3, 10);
+
+        topParkingList.innerHTML =
+          topThree
+            .map(renderTopParkingCard)
+            .join("");
+
+        if (otherParkingLots.length > 0) {
+          otherParkingList.innerHTML =
+            otherParkingLots
+              .map(renderOtherParkingCard)
+              .join("");
+
+          otherSection.classList.remove("hidden");
+        } else {
+          otherSection.classList.add("hidden");
+        }
+
+        resultsCard.classList.remove("hidden");
+
+        if (accuracy <= 500) {
+          setStatus(
+            "✅ 已完成附近停車場排序。你的座標沒有傳回伺服器。",
+            "success"
+          );
+        }
+
+        searchButton.disabled = false;
+
+        searchButton.textContent =
+          "📍 重新搜尋附近停車場";
+      } catch (error) {
+        console.error(error);
+
+        setStatus(
+          `❌ ${error.message || "停車資料取得失敗，請稍後再試。"}`,
+          "danger"
+        );
+
+        searchButton.disabled = false;
+        searchButton.textContent = "📍 再試一次";
+      }
+    }
+
+    searchButton.addEventListener("click", () => {
+      if (!window.isSecureContext) {
+        setStatus(
+          "❌ 目前不是 HTTPS 安全連線，瀏覽器可能不允許定位。",
+          "danger"
+        );
+
+        return;
+      }
+
+      if (!("geolocation" in navigator)) {
+        setStatus(
+          "❌ 這個瀏覽器不支援定位功能。",
+          "danger"
+        );
+
+        return;
+      }
+
+      searchButton.disabled = true;
+
+      searchButton.textContent =
+        "正在取得目前位置……";
+
+      setStatus(
+        "瀏覽器正在取得你目前的位置，請稍候……"
+      );
+
+      navigator.geolocation.getCurrentPosition(
+        handlePositionSuccess,
+        handlePositionError,
+        {
+          enableHighAccuracy: true,
+          timeout: 12000,
+          maximumAge: 60000,
+        }
+      );
+    });
+
+    clearButton.addEventListener(
+      "click",
+      resetResults
+    );
+
+    resetResults();
+  </script>
+</body>
+</html>
+```
+
+# 三、提交檔案
+
+貼完後，按右上角綠色按鈕：
+
+```text
+Commit changes...
+```
+
+Commit message 輸入：
+
+```text
+Add nearby parking search page
+```
+
+再完成提交。
+
+# 四、部署後開啟網址
+
+等待約 1 分鐘，先使用電腦開啟：
+
+```text
+https://kaohsiung-parking-api-test.vercel.app/nearby-test.html
+```
+
+這一版會正式顯示：
+
+* 使用目前位置按鈕
+* 隱私說明
+* 定位誤差範圍
+* 清洗後停車場筆數
+* 附近可用停車場數量
+* TDX 最新資料時間
+* 第一推薦
+* 第二備案
+* 第三備案
+* 其他附近選項
+* Google 地圖導航按鈕
+* 高雄市外位置提示
+* 定位拒絕、定位逾時與 API 失敗提示
+
+完成提交並打開網址後，把畫面截圖貼上來。
