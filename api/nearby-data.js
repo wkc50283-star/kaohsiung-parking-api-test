@@ -250,8 +250,10 @@ function calculateAgeMinutes(dataCollectTime) {
   );
 }
 
-function isObviousMotorcycleName(name) {
-  return /機車|摩托車|二輪/i.test(name || "");
+function isExcludedVehicleName(name) {
+  return /機車|摩托車|二輪|大型車|大客車|遊覽車|貨車/i.test(
+    name || ""
+  );
 }
 
 function addReasonCount(reasonCounts, reason) {
@@ -290,11 +292,11 @@ function evaluateRecord(availability, basic) {
 
   const exclusionReasons = [];
 
-  if (isObviousMotorcycleName(name)) {
-    exclusionReasons.push(
-      "名稱顯示為機車專用停車場"
-    );
-  }
+  if (isExcludedVehicleName(name)) {
+  exclusionReasons.push(
+    "名稱顯示為非一般小客車專用停車場"
+  );
+}
 
   if (
     position.latitude === null ||
