@@ -316,6 +316,13 @@ module.exports = async function handler(req, res) {
     }
 
     const joinedRecords = [];
+        const spaceTypeStats = {
+      matchedRecords: 0,
+      recordsWithSpaceType1: 0,
+      recordsWithoutSpaceType1: 0,
+      validSpaceType1Records: 0,
+      invalidSpaceType1Records: 0,
+    };
 
     for (const availability of availabilityRecords) {
       const basic = basicMap.get(availability.CarParkID);
@@ -323,7 +330,43 @@ module.exports = async function handler(req, res) {
       if (!basic) {
         continue;
       }
+      spaceTypeStats.matchedRecords += 1;
 
+      const availabilities = Array.isArray(
+        availability.Availabilities
+      )
+        ? availability.Availabilities
+        : [];
+
+      const carAvailability = availabilities.find(
+        (item) => Number(item.SpaceType) === 1
+      );
+
+      if (!carAvailability) {
+        spaceTypeStats.recordsWithoutSpaceType1 += 1;
+      } else {
+        spaceTypeStats.recordsWithSpaceType1 += 1;
+
+        const carTotalSpaces = Number(
+          carAvailability.NumberOfSpaces
+        );
+
+        const carAvailableSpaces = Number(
+          carAvailability.AvailableSpaces
+        );
+
+        if (
+          Number.isFinite(carTotalSpaces) &&
+          carTotalSpaces > 0 &&
+          Number.isFinite(carAvailableSpaces) &&
+          carAvailableSpaces >= 0 &&
+          carAvailableSpaces <= carTotalSpaces
+        ) {
+          spaceTypeStats.validSpaceType1Records += 1;
+        } else {
+          spaceTypeStats.invalidSpaceType1Records += 1;
+        }
+      }
       const position = readPosition(basic);
 
       if (
@@ -430,6 +473,7 @@ module.exports = async function handler(req, res) {
         overallInitialPass:
           passedHotspots >= Math.ceil(HOTSPOTS.length * 0.6),
       },
+      spaceTypeStats,
       hotspotResults,
     });
   } catch (error) {
