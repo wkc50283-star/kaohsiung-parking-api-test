@@ -343,6 +343,7 @@ module.exports = async function handler(req, res) {
         Longitude: position.longitude,
         TotalSpaces: Number(availability.TotalSpaces),
         AvailableSpaces: Number(availability.AvailableSpaces),
+        Availabilities: Array.isArray(availability.Availabilities) ? availability.Availabilities : [],
         ServiceStatus: Number(availability.ServiceStatus),
         FullStatus: Number(availability.FullStatus),
         DataCollectTime: availability.DataCollectTime,
