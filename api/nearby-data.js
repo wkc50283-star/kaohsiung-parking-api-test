@@ -250,8 +250,46 @@ function calculateAgeMinutes(dataCollectTime) {
   );
 }
 
+function toFiniteNumber(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : null;
+}
+
+function readPassengerCarAvailability(availability) {
+  const records = Array.isArray(
+    availability.Availabilities
+  )
+    ? availability.Availabilities
+    : [];
+
+  const matches = records.filter(
+    (record) => Number(record.SpaceType) === 1
+  );
+
+  return {
+    matches,
+    record: matches.length === 1
+      ? matches[0]
+      : null,
+  };
+}
+
 function isExcludedVehicleName(name) {
-  return /機車|摩托車|二輪|大型車|大客車|遊覽車|貨車/i.test(
+  // SpaceType = 1 是主要判斷依據。
+  // 名稱檢查僅作第二層防呆：
+  // 寧可少顯示，也不推薦用途明顯不符的停車場。
+  return /機車|摩托車|二輪|重機|自行車|腳踏車|大型車|大客車|遊覽車|巴士|公車|貨車|卡車/i.test(
     name || ""
   );
 }
@@ -270,19 +308,29 @@ function evaluateRecord(availability, basic) {
 
   const position = readPosition(basic);
 
-  const totalSpaces = Number(
-    availability.TotalSpaces
-  );
+  const passengerCarAvailability =
+    readPassengerCarAvailability(availability);
 
-  const availableSpaces = Number(
-    availability.AvailableSpaces
-  );
+  const passengerCarRecord =
+    passengerCarAvailability.record;
 
-  const serviceStatus = Number(
+  const totalSpaces = passengerCarRecord
+    ? toFiniteNumber(
+        passengerCarRecord.NumberOfSpaces
+      )
+    : null;
+
+  const availableSpaces = passengerCarRecord
+    ? toFiniteNumber(
+        passengerCarRecord.AvailableSpaces
+      )
+    : null;
+
+  const serviceStatus = toFiniteNumber(
     availability.ServiceStatus
   );
 
-  const fullStatus = Number(
+  const fullStatus = toFiniteNumber(
     availability.FullStatus
   );
 
@@ -292,11 +340,27 @@ function evaluateRecord(availability, basic) {
 
   const exclusionReasons = [];
 
+  if (!name) {
+    exclusionReasons.push("缺少停車場名稱");
+  }
+
+  if (passengerCarAvailability.matches.length === 0) {
+    exclusionReasons.push(
+      "缺少一般汽車車位資料（SpaceType = 1）"
+    );
+  }
+
+  if (passengerCarAvailability.matches.length > 1) {
+    exclusionReasons.push(
+      "一般汽車車位資料重複（SpaceType = 1）"
+    );
+  }
+
   if (isExcludedVehicleName(name)) {
-  exclusionReasons.push(
-    "名稱顯示為非一般小客車專用停車場"
-  );
-}
+    exclusionReasons.push(
+      "名稱顯示為非一般小客車專用停車場"
+    );
+  }
 
   if (
     position.latitude === null ||
@@ -306,38 +370,59 @@ function evaluateRecord(availability, basic) {
   }
 
   if (
-    !Number.isFinite(totalSpaces) ||
+    totalSpaces === null ||
+    !Number.isInteger(totalSpaces) ||
     totalSpaces <= 0
   ) {
-    exclusionReasons.push("總格位不是有效正數");
-  }
-
-  if (!Number.isFinite(availableSpaces)) {
     exclusionReasons.push(
-      "剩餘格位不是有效數字"
+      "一般汽車總格位不是有效正整數"
     );
   }
 
   if (
-    Number.isFinite(availableSpaces) &&
-    availableSpaces < 0
+    availableSpaces === null ||
+    !Number.isInteger(availableSpaces)
   ) {
-    exclusionReasons.push("剩餘格位小於 0");
+    exclusionReasons.push(
+      "一般汽車剩餘格位不是有效整數"
+    );
+  } else if (availableSpaces === -1) {
+    exclusionReasons.push(
+      "一般汽車剩餘格位未知（-1）"
+    );
+  } else if (availableSpaces < -1) {
+    exclusionReasons.push(
+      "一般汽車剩餘格位小於 -1"
+    );
+  } else if (availableSpaces === 0) {
+    exclusionReasons.push(
+      "一般汽車已無剩餘格位"
+    );
   }
 
   if (
-    Number.isFinite(totalSpaces) &&
-    Number.isFinite(availableSpaces) &&
+    totalSpaces !== null &&
+    availableSpaces !== null &&
     availableSpaces > totalSpaces
   ) {
     exclusionReasons.push(
-      "剩餘格位大於總格位"
+      "一般汽車剩餘格位大於總格位"
     );
   }
 
   if (serviceStatus !== 1) {
     exclusionReasons.push(
       "停車場服務狀態不是正常服務"
+    );
+  }
+
+  if (![0, 1, 2, 3].includes(fullStatus)) {
+    exclusionReasons.push(
+      "格位狀態不是可採用的有效值"
+    );
+  } else if (fullStatus === 2 || fullStatus === 3) {
+    exclusionReasons.push(
+      "格位狀態為已滿或過度擁擠"
     );
   }
 
@@ -361,10 +446,7 @@ function evaluateRecord(availability, basic) {
   let parkingStatus = "unknown";
 
   if (isCleanRecord) {
-    parkingStatus =
-      fullStatus === 1 || availableSpaces === 0
-        ? "full"
-        : "available";
+    parkingStatus = "available";
   }
 
   return {
@@ -374,8 +456,10 @@ function evaluateRecord(availability, basic) {
     longitude: position.longitude,
     totalSpaces,
     availableSpaces,
+    sourceSpaceType: 1,
     serviceStatus,
     fullStatus,
+    isAlmostFull: fullStatus === 1,
     dataAgeMinutes,
     dataCollectTime:
       availability.DataCollectTime || "",
@@ -400,10 +484,14 @@ function createParkingLot(
     totalSpaces: evaluation.totalSpaces,
     availableSpaces:
       evaluation.availableSpaces,
+    sourceSpaceType:
+      evaluation.sourceSpaceType,
     status: evaluation.parkingStatus,
     serviceStatus:
       evaluation.serviceStatus,
     fullStatus: evaluation.fullStatus,
+    isAlmostFull:
+      evaluation.isAlmostFull,
     chargeStatus:
       evaluation.chargeStatus,
     dataCollectTime:
@@ -515,7 +603,7 @@ module.exports = async function handler(req, res) {
       excludedRecords: 0,
       cleanRecords: 0,
       availableRecords: 0,
-      fullRecords: 0,
+      almostFullRecords: 0,
     };
 
     for (const availability of availabilityRecords) {
@@ -564,8 +652,8 @@ module.exports = async function handler(req, res) {
         stats.availableRecords += 1;
       }
 
-      if (parkingLot.status === "full") {
-        stats.fullRecords += 1;
+      if (parkingLot.isAlmostFull) {
+        stats.almostFullRecords += 1;
       }
     }
 
@@ -592,7 +680,7 @@ module.exports = async function handler(req, res) {
         ok: true,
 
         testStage:
-          "TDX 高雄停車資料：清洗後附近搜尋測試資料源",
+          "TDX 高雄停車資料：一般汽車清洗後附近搜尋資料源",
 
         source:
           "交通部 TDX 運輸資料流通服務平臺",
@@ -603,8 +691,8 @@ module.exports = async function handler(req, res) {
         cachePolicy:
           "Vercel CDN 快取 5 分鐘，過期後可在背景重新整理 5 分鐘。瀏覽器端不長時間保存。",
 
-        temporaryFieldRule:
-          "SpaceType 官方定義尚待確認。本測試暫時使用最上層 TotalSpaces 與 AvailableSpaces，只用於附近搜尋介面測試，不作為正式網站最終規則。",
+        fieldRule:
+          "第一版只服務一般汽車。總格位與剩餘空位均採用 Availabilities 中 SpaceType = 1 的 NumberOfSpaces 與 AvailableSpaces；不使用可能混入機車或其他車位的最上層 TotalSpaces 與 AvailableSpaces。僅輸出資料新鮮、正常營業、格位狀態可採用且一般汽車剩餘空位大於 0 的停車場。",
 
         stats,
 
