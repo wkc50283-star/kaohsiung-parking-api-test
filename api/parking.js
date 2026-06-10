@@ -50,12 +50,20 @@ const HOTSPOTS = [
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
+
   res.setHeader(
     "Content-Type",
     "application/json; charset=utf-8"
   );
-  res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify(payload, null, 2));
+
+  res.setHeader(
+    "Cache-Control",
+    "no-store"
+  );
+
+  res.end(
+    JSON.stringify(payload, null, 2)
+  );
 }
 
 async function fetchWithTimeout(
@@ -63,12 +71,14 @@ async function fetchWithTimeout(
   options = {},
   timeoutMs = 30000
 ) {
-  const controller = new AbortController();
+  const controller =
+    new AbortController();
 
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    timeoutMs
-  );
+  const timeoutId =
+    setTimeout(
+      () => controller.abort(),
+      timeoutMs
+    );
 
   try {
     return await fetch(url, {
@@ -81,8 +91,11 @@ async function fetchWithTimeout(
 }
 
 async function getAccessToken() {
-  const clientId = process.env.TDX_CLIENT_ID;
-  const clientSecret = process.env.TDX_CLIENT_SECRET;
+  const clientId =
+    process.env.TDX_CLIENT_ID;
+
+  const clientSecret =
+    process.env.TDX_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
     throw new Error(
@@ -90,24 +103,31 @@ async function getAccessToken() {
     );
   }
 
-  const response = await fetchWithTimeout(
-    TOKEN_URL,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type":
-          "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        grant_type: "client_credentials",
-        client_id: clientId,
-        client_secret: clientSecret,
-      }),
-    },
-    15000
-  );
+  const response =
+    await fetchWithTimeout(
+      TOKEN_URL,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type:
+            "client_credentials",
 
-  const text = await response.text();
+          client_id:
+            clientId,
+
+          client_secret:
+            clientSecret,
+        }),
+      },
+      15000
+    );
+
+  const text =
+    await response.text();
 
   if (!response.ok) {
     throw new Error(
@@ -118,7 +138,8 @@ async function getAccessToken() {
     );
   }
 
-  const data = JSON.parse(text);
+  const data =
+    JSON.parse(text);
 
   if (!data.access_token) {
     throw new Error(
@@ -133,19 +154,24 @@ async function fetchTdxJson(
   url,
   accessToken
 ) {
-  const response = await fetchWithTimeout(
-    url,
-    {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
-    30000
-  );
+  const response =
+    await fetchWithTimeout(
+      url,
+      {
+        method: "GET",
+        headers: {
+          Accept:
+            "application/json",
 
-  const text = await response.text();
+          Authorization:
+            `Bearer ${accessToken}`,
+        },
+      },
+      30000
+    );
+
+  const text =
+    await response.text();
 
   if (!response.ok) {
     throw new Error(
@@ -167,17 +193,27 @@ function extractArray(
     return data;
   }
 
-  if (!data || typeof data !== "object") {
+  if (
+    !data ||
+    typeof data !== "object"
+  ) {
     return [];
   }
 
-  for (const key of possibleKeys) {
-    if (Array.isArray(data[key])) {
+  for (
+    const key of
+    possibleKeys
+  ) {
+    if (
+      Array.isArray(data[key])
+    ) {
       return data[key];
     }
   }
 
-  if (Array.isArray(data.value)) {
+  if (
+    Array.isArray(data.value)
+  ) {
     return data.value;
   }
 
@@ -185,11 +221,16 @@ function extractArray(
 }
 
 function readLocalizedText(value) {
-  if (typeof value === "string") {
+  if (
+    typeof value === "string"
+  ) {
     return value;
   }
 
-  if (!value || typeof value !== "object") {
+  if (
+    !value ||
+    typeof value !== "object"
+  ) {
     return "";
   }
 
@@ -209,28 +250,32 @@ function readPosition(carPark) {
     carPark.GeoPosition ||
     {};
 
-  const latitude = Number(
-    position.PositionLat ??
-      position.Latitude ??
-      carPark.PositionLat ??
-      carPark.Latitude
-  );
+  const latitude =
+    Number(
+      position.PositionLat ??
+        position.Latitude ??
+        carPark.PositionLat ??
+        carPark.Latitude
+    );
 
-  const longitude = Number(
-    position.PositionLon ??
-      position.Longitude ??
-      carPark.PositionLon ??
-      carPark.Longitude
-  );
+  const longitude =
+    Number(
+      position.PositionLon ??
+        position.Longitude ??
+        carPark.PositionLon ??
+        carPark.Longitude
+    );
 
   return {
-    latitude: Number.isFinite(latitude)
-      ? latitude
-      : null,
+    latitude:
+      Number.isFinite(latitude)
+        ? latitude
+        : null,
 
-    longitude: Number.isFinite(longitude)
-      ? longitude
-      : null,
+    longitude:
+      Number.isFinite(longitude)
+        ? longitude
+        : null,
   };
 }
 
@@ -240,10 +285,13 @@ function calculateDistanceMeters(
   lat2,
   lon2
 ) {
-  const earthRadiusMeters = 6371000;
+  const earthRadiusMeters =
+    6371000;
 
-  const toRadians = (degrees) =>
-    (degrees * Math.PI) / 180;
+  const toRadians =
+    (degrees) =>
+      (degrees * Math.PI) /
+      180;
 
   const latitudeDifference =
     toRadians(lat2 - lat1);
@@ -252,10 +300,18 @@ function calculateDistanceMeters(
     toRadians(lon2 - lon1);
 
   const a =
-    Math.sin(latitudeDifference / 2) ** 2 +
-    Math.cos(toRadians(lat1)) *
-      Math.cos(toRadians(lat2)) *
-      Math.sin(longitudeDifference / 2) ** 2;
+    Math.sin(
+      latitudeDifference / 2
+    ) ** 2 +
+    Math.cos(
+      toRadians(lat1)
+    ) *
+      Math.cos(
+        toRadians(lat2)
+      ) *
+      Math.sin(
+        longitudeDifference / 2
+      ) ** 2;
 
   const c =
     2 *
@@ -275,7 +331,9 @@ function calculateAgeMinutes(
   const timestamp =
     Date.parse(dataCollectTime);
 
-  if (!Number.isFinite(timestamp)) {
+  if (
+    !Number.isFinite(timestamp)
+  ) {
     return null;
   }
 
@@ -288,101 +346,7 @@ function calculateAgeMinutes(
   );
 }
 
-// 保留原本最上層欄位的測試分類。
-// 目的：方便與 SpaceType = 1 的一般汽車細項資料比較。
-// 正式網站之後不應直接依賴最上層 AvailableSpaces。
-function classifyTopLevelParkingLot(
-  record
-) {
-  const availableSpaces =
-    Number(record.AvailableSpaces);
-
-  const serviceStatus =
-    Number(record.ServiceStatus);
-
-  const fullStatus =
-    Number(record.FullStatus);
-
-  const ageMinutes =
-    calculateAgeMinutes(
-      record.DataCollectTime
-    );
-
-  if (serviceStatus !== 1) {
-    return "service-unavailable";
-  }
-
-  if (
-    ageMinutes === null ||
-    ageMinutes > 15 ||
-    ageMinutes < -5
-  ) {
-    return "stale";
-  }
-
-  if (
-    !Number.isFinite(
-      availableSpaces
-    )
-  ) {
-    return "invalid";
-  }
-
-  if (availableSpaces < 0) {
-    return "unreliable";
-  }
-
-  if (
-    availableSpaces === 0 ||
-    fullStatus === 2 ||
-    fullStatus === 3
-  ) {
-    return "full";
-  }
-
-  if (fullStatus === 1) {
-    return "nearly-full";
-  }
-
-  return "available";
-}
-
-function getStatusRank(status) {
-  const ranking = {
-    available: 1,
-    "nearly-full": 2,
-    full: 3,
-    unreliable: 4,
-    stale: 5,
-    "service-unavailable": 6,
-    invalid: 7,
-  };
-
-  return ranking[status] || 99;
-}
-
-function createEmptySpaceTypeStats() {
-  return {
-    matchedRecords: 0,
-    recordsWithSpaceType1: 0,
-    recordsWithoutSpaceType1: 0,
-    validSpaceType1Records: 0,
-    invalidSpaceType1Records: 0,
-
-    invalidReasonCounts: {
-      invalidOrNonPositiveTotalSpaces: 0,
-      unknownAvailableSpacesMinusOne: 0,
-      abnormalAvailableSpacesBelowMinusOne: 0,
-      invalidAvailableSpaces: 0,
-      availableSpacesGreaterThanTotalSpaces: 0,
-    },
-
-    sampleRecordsWithoutSpaceType1: [],
-    sampleInvalidSpaceType1Records: [],
-  };
-}
-
-function createSpaceType1Diagnostic(
+function diagnoseSpaceType1(
   availability
 ) {
   const availabilities =
@@ -395,7 +359,8 @@ function createSpaceType1Diagnostic(
   const carAvailability =
     availabilities.find(
       (item) =>
-        Number(item.SpaceType) === 1
+        Number(item.SpaceType) ===
+        1
     );
 
   if (!carAvailability) {
@@ -410,41 +375,28 @@ function createSpaceType1Diagnostic(
     };
   }
 
-  const carTotalSpaces = Number(
-    carAvailability.NumberOfSpaces
-  );
+  const carTotalSpaces =
+    Number(
+      carAvailability
+        .NumberOfSpaces
+    );
 
-  const carAvailableSpaces = Number(
-    carAvailability.AvailableSpaces
-  );
+  const carAvailableSpaces =
+    Number(
+      carAvailability
+        .AvailableSpaces
+    );
 
   const hasValidTotalSpaces =
-    Number.isFinite(carTotalSpaces) &&
+    Number.isFinite(
+      carTotalSpaces
+    ) &&
     carTotalSpaces > 0;
 
   const hasValidAvailableSpaces =
     Number.isFinite(
       carAvailableSpaces
     );
-
-  const isUnknownAvailableSpaces =
-    carAvailableSpaces === -1;
-
-  const isAbnormalNegativeAvailableSpaces =
-    carAvailableSpaces < -1;
-
-  const isAvailableSpacesGreaterThanTotal =
-    hasValidTotalSpaces &&
-    hasValidAvailableSpaces &&
-    carAvailableSpaces >
-      carTotalSpaces;
-
-  const isValid =
-    hasValidTotalSpaces &&
-    hasValidAvailableSpaces &&
-    carAvailableSpaces >= 0 &&
-    carAvailableSpaces <=
-      carTotalSpaces;
 
   const invalidReasons = [];
 
@@ -454,28 +406,35 @@ function createSpaceType1Diagnostic(
     );
   }
 
-  if (isUnknownAvailableSpaces) {
+  if (
+    carAvailableSpaces === -1
+  ) {
     invalidReasons.push(
       "unknown-available-spaces-minus-one"
     );
   }
 
   if (
-    isAbnormalNegativeAvailableSpaces
+    carAvailableSpaces < -1
   ) {
     invalidReasons.push(
       "abnormal-available-spaces-below-minus-one"
     );
   }
 
-  if (!hasValidAvailableSpaces) {
+  if (
+    !hasValidAvailableSpaces
+  ) {
     invalidReasons.push(
       "invalid-available-spaces"
     );
   }
 
   if (
-    isAvailableSpacesGreaterThanTotal
+    hasValidTotalSpaces &&
+    hasValidAvailableSpaces &&
+    carAvailableSpaces >
+      carTotalSpaces
   ) {
     invalidReasons.push(
       "available-spaces-greater-than-total-spaces"
@@ -484,27 +443,69 @@ function createSpaceType1Diagnostic(
 
   return {
     hasSpaceType1: true,
+
     carTotalSpaces,
+
     carAvailableSpaces,
-    isValid,
+
+    isValid:
+      invalidReasons.length === 0,
+
     invalidReasons,
   };
 }
 
-function updateSpaceTypeStats(
+function createEmptyStats() {
+  return {
+    matchedRecords: 0,
+
+    recordsWithSpaceType1: 0,
+
+    recordsWithoutSpaceType1: 0,
+
+    validSpaceType1Records: 0,
+
+    invalidSpaceType1Records: 0,
+
+    invalidReasonCounts: {
+      invalidOrNonPositiveTotalSpaces:
+        0,
+
+      unknownAvailableSpacesMinusOne:
+        0,
+
+      abnormalAvailableSpacesBelowMinusOne:
+        0,
+
+      invalidAvailableSpaces:
+        0,
+
+      availableSpacesGreaterThanTotalSpaces:
+        0,
+    },
+
+    sampleRecordsWithoutSpaceType1:
+      [],
+
+    sampleInvalidSpaceType1Records:
+      [],
+  };
+}
+
+function updateStats(
   stats,
   availability,
-  carParkName
+  carParkName,
+  diagnostic
 ) {
   stats.matchedRecords += 1;
 
-  const diagnostic =
-    createSpaceType1Diagnostic(
-      availability
-    );
-
-  if (!diagnostic.hasSpaceType1) {
-    stats.recordsWithoutSpaceType1 += 1;
+  if (
+    !diagnostic.hasSpaceType1
+  ) {
+    stats
+      .recordsWithoutSpaceType1 +=
+      1;
 
     if (
       stats
@@ -516,27 +517,38 @@ function updateSpaceTypeStats(
         .push({
           carParkId:
             availability.CarParkID,
+
           carParkName,
+
           availabilities:
             Array.isArray(
-              availability.Availabilities
+              availability
+                .Availabilities
             )
-              ? availability.Availabilities
+              ? availability
+                  .Availabilities
               : [],
         });
     }
 
-    return diagnostic;
+    return;
   }
 
-  stats.recordsWithSpaceType1 += 1;
+  stats
+    .recordsWithSpaceType1 +=
+    1;
 
   if (diagnostic.isValid) {
-    stats.validSpaceType1Records += 1;
-    return diagnostic;
+    stats
+      .validSpaceType1Records +=
+      1;
+
+    return;
   }
 
-  stats.invalidSpaceType1Records += 1;
+  stats
+    .invalidSpaceType1Records +=
+    1;
 
   for (
     const reason of
@@ -546,40 +558,50 @@ function updateSpaceTypeStats(
       reason ===
       "invalid-or-non-positive-total-spaces"
     ) {
-      stats.invalidReasonCounts
-        .invalidOrNonPositiveTotalSpaces += 1;
+      stats
+        .invalidReasonCounts
+        .invalidOrNonPositiveTotalSpaces +=
+        1;
     }
 
     if (
       reason ===
       "unknown-available-spaces-minus-one"
     ) {
-      stats.invalidReasonCounts
-        .unknownAvailableSpacesMinusOne += 1;
+      stats
+        .invalidReasonCounts
+        .unknownAvailableSpacesMinusOne +=
+        1;
     }
 
     if (
       reason ===
       "abnormal-available-spaces-below-minus-one"
     ) {
-      stats.invalidReasonCounts
-        .abnormalAvailableSpacesBelowMinusOne += 1;
+      stats
+        .invalidReasonCounts
+        .abnormalAvailableSpacesBelowMinusOne +=
+        1;
     }
 
     if (
       reason ===
       "invalid-available-spaces"
     ) {
-      stats.invalidReasonCounts
-        .invalidAvailableSpaces += 1;
+      stats
+        .invalidReasonCounts
+        .invalidAvailableSpaces +=
+        1;
     }
 
     if (
       reason ===
       "available-spaces-greater-than-total-spaces"
     ) {
-      stats.invalidReasonCounts
-        .availableSpacesGreaterThanTotalSpaces += 1;
+      stats
+        .invalidReasonCounts
+        .availableSpacesGreaterThanTotalSpaces +=
+        1;
     }
   }
 
@@ -593,21 +615,121 @@ function updateSpaceTypeStats(
       .push({
         carParkId:
           availability.CarParkID,
+
         carParkName,
+
         carTotalSpaces:
-          diagnostic.carTotalSpaces,
+          diagnostic
+            .carTotalSpaces,
+
         carAvailableSpaces:
-          diagnostic.carAvailableSpaces,
+          diagnostic
+            .carAvailableSpaces,
+
         invalidReasons:
-          diagnostic.invalidReasons,
+          diagnostic
+            .invalidReasons,
       });
   }
+}
 
-  return diagnostic;
+function classifyCarRecord(
+  availability,
+  diagnostic
+) {
+  const serviceStatus =
+    Number(
+      availability.ServiceStatus
+    );
+
+  const fullStatus =
+    Number(
+      availability.FullStatus
+    );
+
+  const ageMinutes =
+    calculateAgeMinutes(
+      availability
+        .DataCollectTime
+    );
+
+  if (
+    serviceStatus !== 1
+  ) {
+    return "service-unavailable";
+  }
+
+  if (
+    ageMinutes === null ||
+    ageMinutes > 15 ||
+    ageMinutes < -5
+  ) {
+    return "stale";
+  }
+
+  if (
+    !diagnostic.hasSpaceType1
+  ) {
+    return "missing-space-type-1";
+  }
+
+  if (!diagnostic.isValid) {
+    return "invalid-space-type-1";
+  }
+
+  if (
+    diagnostic
+      .carAvailableSpaces ===
+      0 ||
+    fullStatus === 2 ||
+    fullStatus === 3
+  ) {
+    return "full";
+  }
+
+  if (fullStatus === 1) {
+    return "nearly-full";
+  }
+
+  return "available";
+}
+
+function isUsableCarStatus(
+  status
+) {
+  return (
+    status === "available" ||
+    status === "nearly-full"
+  );
+}
+
+function getStatusRank(status) {
+  const ranking = {
+    available: 1,
+
+    "nearly-full": 2,
+
+    full: 3,
+
+    stale: 4,
+
+    "service-unavailable": 5,
+
+    "missing-space-type-1": 6,
+
+    "invalid-space-type-1": 7,
+  };
+
+  return (
+    ranking[status] || 99
+  );
 }
 
 module.exports =
-  async function handler(req, res) {
+  async function handler(
+    req,
+    res
+  ) {
     res.setHeader(
       "Access-Control-Allow-Origin",
       "*"
@@ -623,16 +745,21 @@ module.exports =
       "Content-Type"
     );
 
-    if (req.method === "OPTIONS") {
+    if (
+      req.method === "OPTIONS"
+    ) {
       res.statusCode = 204;
       res.end();
       return;
     }
 
-    if (req.method !== "GET") {
+    if (
+      req.method !== "GET"
+    ) {
       sendJson(res, 405, {
         ok: false,
-        message: "僅支援 GET 請求",
+        message:
+          "僅支援 GET 請求",
       });
 
       return;
@@ -672,26 +799,33 @@ module.exports =
           ["CarParks"]
         );
 
-      const basicMap = new Map();
+      const basicMap =
+        new Map();
 
       for (
-        const carPark of
+        const basic of
         basicRecords
       ) {
-        if (carPark.CarParkID) {
+        if (
+          basic.CarParkID
+        ) {
           basicMap.set(
-            carPark.CarParkID,
-            carPark
+            basic.CarParkID,
+            basic
           );
         }
       }
 
-      const joinedRecords = [];
+      const stats =
+        createEmptyStats();
 
-      const spaceTypeStats =
-        createEmptySpaceTypeStats();
+      const joinedRecords =
+        [];
 
       let unmatchedRecords = 0;
+
+      let recordsWithoutPosition =
+        0;
 
       for (
         const availability of
@@ -699,7 +833,8 @@ module.exports =
       ) {
         const basic =
           basicMap.get(
-            availability.CarParkID
+            availability
+              .CarParkID
           );
 
         if (!basic) {
@@ -709,242 +844,338 @@ module.exports =
 
         const carParkName =
           readLocalizedText(
-            availability.CarParkName
+            availability
+              .CarParkName
           ) ||
           readLocalizedText(
             basic.CarParkName
           );
 
-        const spaceType1Diagnostic =
-          updateSpaceTypeStats(
-            spaceTypeStats,
-            availability,
-            carParkName
+        const diagnostic =
+          diagnoseSpaceType1(
+            availability
           );
+
+        updateStats(
+          stats,
+          availability,
+          carParkName,
+          diagnostic
+        );
 
         const position =
           readPosition(basic);
 
         if (
-          position.latitude === null ||
-          position.longitude === null
+          position.latitude ===
+            null ||
+          position.longitude ===
+            null
         ) {
+          recordsWithoutPosition +=
+            1;
+
           continue;
         }
 
+        const dataStatus =
+          classifyCarRecord(
+            availability,
+            diagnostic
+          );
+
         joinedRecords.push({
-          CarParkID:
-            availability.CarParkID,
+          carParkId:
+            availability
+              .CarParkID,
 
-          CarParkName:
-            carParkName,
+          carParkName,
 
-          Address:
+          address:
             readLocalizedText(
               basic.Address
             ),
 
-          Latitude:
+          latitude:
             position.latitude,
 
-          Longitude:
+          longitude:
             position.longitude,
 
-          TotalSpaces:
+          topLevelTotalSpaces:
             Number(
-              availability.TotalSpaces
+              availability
+                .TotalSpaces
             ),
 
-          AvailableSpaces:
+          topLevelAvailableSpaces:
             Number(
               availability
                 .AvailableSpaces
             ),
 
-          Availabilities:
-            Array.isArray(
-              availability
-                .Availabilities
-            )
-              ? availability
-                  .Availabilities
-              : [],
+          carTotalSpaces:
+            diagnostic
+              .carTotalSpaces,
 
-          SpaceType1:
-            spaceType1Diagnostic,
+          carAvailableSpaces:
+            diagnostic
+              .carAvailableSpaces,
 
-          ServiceStatus:
+          hasSpaceType1:
+            diagnostic
+              .hasSpaceType1,
+
+          validSpaceType1:
+            diagnostic
+              .isValid,
+
+          invalidReasons:
+            diagnostic
+              .invalidReasons,
+
+          serviceStatus:
             Number(
               availability
                 .ServiceStatus
             ),
 
-          FullStatus:
+          fullStatus:
             Number(
-              availability.FullStatus
+              availability
+                .FullStatus
             ),
 
-          ChargeStatus:
+          chargeStatus:
             availability
-              .ChargeStatus ?? null,
+              .ChargeStatus ??
+            null,
 
-          DataCollectTime:
+          dataCollectTime:
             availability
               .DataCollectTime,
 
-          DataAgeMinutes:
+          dataAgeMinutes:
             calculateAgeMinutes(
               availability
                 .DataCollectTime
             ),
 
-          DataStatus:
-            classifyTopLevelParkingLot(
-              availability
-            ),
+          dataStatus,
         });
       }
 
       const hotspotResults =
-        HOTSPOTS.map((hotspot) => {
-          const nearbyCandidates =
-            joinedRecords
-              .map((parkingLot) => ({
-                ...parkingLot,
+        HOTSPOTS.map(
+          (hotspot) => {
+            const nearbyRecords =
+              joinedRecords
+                .map(
+                  (parkingLot) => ({
+                    ...parkingLot,
 
-                DistanceMeters:
-                  calculateDistanceMeters(
-                    hotspot.latitude,
-                    hotspot.longitude,
-                    parkingLot.Latitude,
-                    parkingLot.Longitude
-                  ),
-              }))
-              .filter(
-                (parkingLot) =>
-                  parkingLot
-                    .DistanceMeters <=
-                  1200
-              )
-              .sort((a, b) => {
-                const rankDifference =
-                  getStatusRank(
-                    a.DataStatus
-                  ) -
-                  getStatusRank(
-                    b.DataStatus
-                  );
-
-                if (
-                  rankDifference !== 0
-                ) {
-                  return rankDifference;
-                }
-
-                return (
-                  a.DistanceMeters -
-                  b.DistanceMeters
+                    distanceMeters:
+                      calculateDistanceMeters(
+                        hotspot.latitude,
+                        hotspot.longitude,
+                        parkingLot.latitude,
+                        parkingLot.longitude
+                      ),
+                  })
+                )
+                .filter(
+                  (parkingLot) =>
+                    parkingLot
+                      .distanceMeters <=
+                    1200
                 );
-              });
 
-          const countWithin =
-            (distanceMeters) =>
-              nearbyCandidates
+            const validCarRecords =
+              nearbyRecords
                 .filter(
                   (parkingLot) =>
                     parkingLot
-                      .DistanceMeters <=
-                    distanceMeters
-                )
-                .length;
+                      .validSpaceType1 &&
+                    parkingLot
+                      .serviceStatus ===
+                      1 &&
+                    parkingLot
+                      .dataAgeMinutes !==
+                      null &&
+                    parkingLot
+                      .dataAgeMinutes <=
+                      15 &&
+                    parkingLot
+                      .dataAgeMinutes >=
+                      -5
+                );
 
-          const countAvailableWithin =
-            (distanceMeters) =>
-              nearbyCandidates
+            const usableCarRecords =
+              validCarRecords
                 .filter(
                   (parkingLot) =>
-                    parkingLot
-                      .DistanceMeters <=
-                      distanceMeters &&
-                    parkingLot
-                      .DataStatus ===
-                      "available"
+                    isUsableCarStatus(
+                      parkingLot
+                        .dataStatus
+                    )
                 )
-                .length;
+                .sort(
+                  (a, b) => {
+                    const rankDifference =
+                      getStatusRank(
+                        a.dataStatus
+                      ) -
+                      getStatusRank(
+                        b.dataStatus
+                      );
 
-          return {
-            id: hotspot.id,
-            name: hotspot.name,
+                    if (
+                      rankDifference !==
+                      0
+                    ) {
+                      return (
+                        rankDifference
+                      );
+                    }
 
-            testCenter: {
-              Latitude:
-                hotspot.latitude,
+                    return (
+                      a.distanceMeters -
+                      b.distanceMeters
+                    );
+                  }
+                );
 
-              Longitude:
-                hotspot.longitude,
-            },
+            const countWithin =
+              (
+                records,
+                distanceMeters
+              ) =>
+                records
+                  .filter(
+                    (parkingLot) =>
+                      parkingLot
+                        .distanceMeters <=
+                      distanceMeters
+                  )
+                  .length;
 
-            parkingLotsWithin500Meters:
-              countWithin(500),
+            return {
+              id: hotspot.id,
 
-            parkingLotsWithin800Meters:
-              countWithin(800),
+              name:
+                hotspot.name,
 
-            parkingLotsWithin1200Meters:
-              countWithin(1200),
+              testCenter: {
+                latitude:
+                  hotspot.latitude,
 
-            reliableAvailableLotsWithin800Meters:
-              countAvailableWithin(800),
+                longitude:
+                  hotspot.longitude,
+              },
 
-            reliableAvailableLotsWithin1200Meters:
-              countAvailableWithin(1200),
+              allNearbyRecordsWithin1200Meters:
+                nearbyRecords.length,
 
-            passesInitialScreen:
-              countAvailableWithin(1200) >=
-              2,
+              validCarLotsWithin500Meters:
+                countWithin(
+                  validCarRecords,
+                  500
+                ),
 
-            topCandidates:
-              nearbyCandidates.slice(
-                0,
-                6
-              ),
-          };
-        });
+              validCarLotsWithin800Meters:
+                countWithin(
+                  validCarRecords,
+                  800
+                ),
+
+              validCarLotsWithin1200Meters:
+                countWithin(
+                  validCarRecords,
+                  1200
+                ),
+
+              usableCarLotsWithin500Meters:
+                countWithin(
+                  usableCarRecords,
+                  500
+                ),
+
+              usableCarLotsWithin800Meters:
+                countWithin(
+                  usableCarRecords,
+                  800
+                ),
+
+              usableCarLotsWithin1200Meters:
+                countWithin(
+                  usableCarRecords,
+                  1200
+                ),
+
+              passesCarOnlyScreen:
+                countWithin(
+                  usableCarRecords,
+                  1200
+                ) >= 2,
+
+              topCarCandidates:
+                usableCarRecords
+                  .slice(0, 6),
+            };
+          }
+        );
 
       const passedHotspots =
-        hotspotResults.filter(
-          (hotspot) =>
-            hotspot
-              .passesInitialScreen
-        ).length;
+        hotspotResults
+          .filter(
+            (hotspot) =>
+              hotspot
+                .passesCarOnlyScreen
+          )
+          .length;
 
       sendJson(res, 200, {
         ok: true,
 
         testStage:
-          "TDX 高雄熱門地點一般汽車 SpaceType = 1 診斷測試",
+          "TDX 高雄熱門地點一般汽車 SpaceType = 1 實際篩選測試",
 
         source:
           "交通部 TDX 運輸資料流通服務平臺",
 
         diagnosticPurpose:
-          "此端點只供測試。正式網站目前仍使用 api/nearby-data.js。這裡用來確認 SpaceType = 1 一般汽車資料的涵蓋率與異常原因。",
+          "此端點只供測試。正式網站目前仍使用 api/nearby-data.js。本測試頁已改為只採用 SpaceType = 1 的有效一般汽車資料。",
 
         fieldRule:
-          "第一版網站只服務一般汽車。正式版應優先使用 Availabilities 中 SpaceType = 1 的 NumberOfSpaces 與 AvailableSpaces。",
+          "第一版只服務一般汽車。沒有 SpaceType = 1、剩餘空位未知、負數異常、剩餘空位大於總格位、非正常服務或資料過舊的停車場，均不納入可用候選結果。",
 
         summary: {
           availabilityRecords:
-            availabilityRecords.length,
+            availabilityRecords
+              .length,
 
           basicRecords:
             basicRecords.length,
 
           matchedRecords:
-            spaceTypeStats
+            stats
               .matchedRecords,
 
           unmatchedRecords,
+
+          recordsWithoutPosition,
+
+          validSpaceType1Records:
+            stats
+              .validSpaceType1Records,
+
+          invalidSpaceType1Records:
+            stats
+              .invalidSpaceType1Records,
+
+          recordsWithoutSpaceType1:
+            stats
+              .recordsWithoutSpaceType1,
 
           testedHotspots:
             HOTSPOTS.length,
@@ -955,14 +1186,13 @@ module.exports =
             HOTSPOTS.length -
             passedHotspots,
 
-          overallInitialPass:
-            passedHotspots >=
-            Math.ceil(
-              HOTSPOTS.length * 0.6
-            ),
+          overallCarOnlyPass:
+            passedHotspots ===
+            HOTSPOTS.length,
         },
 
-        spaceTypeStats,
+        spaceTypeStats:
+          stats,
 
         hotspotResults,
       });
@@ -971,7 +1201,7 @@ module.exports =
         ok: false,
 
         message:
-          "熱門地點一般汽車診斷測試失敗",
+          "一般汽車 SpaceType = 1 篩選測試失敗",
 
         diagnostic: {
           name:
