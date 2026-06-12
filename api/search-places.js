@@ -9,6 +9,7 @@ const KAOHSIUNG_BOUNDS = Object.freeze({
 });
 
 const REQUEST_TIMEOUT_MS = 8000;
+const UPSTREAM_LIMIT = 15;
 const MAX_RESULTS = 5;
 
 function setCorsHeaders(res) {
@@ -86,7 +87,7 @@ function buildGeoapifyUrl(query, apiKey) {
   url.search = new URLSearchParams({
     text: query,
     apiKey,
-    limit: String(MAX_RESULTS),
+    limit: String(UPSTREAM_LIMIT),
     lang: "zh",
     format: "json",
     filter: "countrycode:tw|rect:120.0,22.45,120.95,23.55",
@@ -98,6 +99,10 @@ function buildGeoapifyUrl(query, apiKey) {
 
 function toText(value) {
   return typeof value === "string" ? value : "";
+}
+
+function normalizeText(value) {
+  return toText(value).normalize("NFKC").trim();
 }
 
 function toFiniteNumber(value) {
@@ -115,6 +120,20 @@ function isInsideKaohsiungBounds(latitude, longitude) {
   );
 }
 
+function isKaohsiungResult(item) {
+  const fields = [
+    item.state,
+    item.county,
+    item.city,
+    item.formatted,
+    item.address_line2,
+  ];
+
+  return fields.some((value) =>
+    normalizeText(value).includes("高雄市")
+  );
+}
+
 function normalizeResult(feature) {
   if (!feature || typeof feature !== "object") {
     return null;
@@ -128,7 +147,8 @@ function normalizeResult(feature) {
     countryCode !== "tw" ||
     latitude === null ||
     longitude === null ||
-    !isInsideKaohsiungBounds(latitude, longitude)
+    !isInsideKaohsiungBounds(latitude, longitude) ||
+    !isKaohsiungResult(feature)
   ) {
     return null;
   }
