@@ -18,7 +18,9 @@ const REQUEST_TIMEOUT_MS = 8000;
 const AUTOCOMPLETE_LIMIT = 20;
 const GEOCODING_LIMIT = 40;
 const PLACES_LIMIT = 20;
-const PUBLIC_LIMIT = 40;
+const PAGE_LIMIT = 15;
+const MAX_OFFSET = 500;
+const MAX_AGGREGATED_RESULTS = 40;
 const MIN_RESULTS_BEFORE_PLACES = 5;
 const PLACES_CATEGORIES =
   "catering,commercial.food_and_drink,commercial.marketplace,commercial.shopping_mall,commercial.department_store,entertainment,leisure,tourism,activity.events_venue,beach";
@@ -159,18 +161,14 @@ function validateOffset(value) {
 
   const offset = Number(rawValue);
 
-  if (!Number.isSafeInteger(offset) || offset < 0) {
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    offset > MAX_OFFSET
+  ) {
     return {
       ok: false,
       offset: 0,
-    };
-  }
-
-  if (offset > 0) {
-    return {
-      ok: false,
-      offset,
-      unsupported: true,
     };
   }
 
@@ -473,7 +471,7 @@ function mergeResults(existing, additions) {
   }
 
   return accepted
-    .slice(0, PUBLIC_LIMIT)
+    .slice(0, MAX_AGGREGATED_RESULTS)
     .map((item) => {
       const {
         _placeIdKey,
@@ -484,6 +482,21 @@ function mergeResults(existing, additions) {
 
       return publicItem;
     });
+}
+
+function paginateResults(results, offset) {
+  return results.slice(offset, offset + PAGE_LIMIT);
+}
+
+function hasNextPage(totalResults, offset) {
+  return offset + PAGE_LIMIT < totalResults;
+}
+
+function wasAggregationTruncated(results, sourceSummaries) {
+  return (
+    results.length >= MAX_AGGREGATED_RESULTS ||
+    sourceSummaries.some((source) => source.reachedLimit)
+  );
 }
 
 function normalizeResult(properties, feature) {
@@ -605,7 +618,7 @@ async function fetchJson(url) {
   }
 }
 
-async function fetchGeocodingSource(url) {
+async function fetchGeocodingSource(url, sourceLimit) {
   const response = await fetchJson(url);
 
   if (!response.ok) {
@@ -624,6 +637,7 @@ async function fetchGeocodingSource(url) {
 
   return {
     ok: true,
+    reachedLimit: response.payload.results.length >= sourceLimit,
     results,
   };
 }
@@ -647,6 +661,8 @@ async function fetchPlacesSource(url) {
 
   return {
     ok: true,
+    reachedLimit:
+      response.payload.features.length >= PLACES_LIMIT,
     results,
   };
 }
@@ -688,9 +704,7 @@ module.exports = async function handler(req, res) {
   if (!offsetValidation.ok) {
     sendJson(res, 400, {
       ok: false,
-      message: offsetValidation.unsupported
-        ? "目前搜尋模式尚未支援載入更多結果。"
-        : "Invalid search offset.",
+      message: "Invalid search offset.",
     });
     return;
   }
@@ -709,9 +723,11 @@ module.exports = async function handler(req, res) {
 
   try {
     let results = [];
+    const sourceSummaries = [];
 
     const autocomplete = await fetchGeocodingSource(
-      buildAutocompleteUrl(queryValidation.query, apiKey)
+      buildAutocompleteUrl(queryValidation.query, apiKey),
+      AUTOCOMPLETE_LIMIT
     );
 
     if (!autocomplete.ok) {
@@ -722,10 +738,14 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    sourceSummaries.push({
+      reachedLimit: autocomplete.reachedLimit,
+    });
     results = mergeResults(results, autocomplete.results);
 
     const geocoding = await fetchGeocodingSource(
-      buildGeocodingUrl(queryValidation.query, apiKey)
+      buildGeocodingUrl(queryValidation.query, apiKey),
+      GEOCODING_LIMIT
     );
 
     if (!geocoding.ok) {
@@ -736,6 +756,9 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    sourceSummaries.push({
+      reachedLimit: geocoding.reachedLimit,
+    });
     results = mergeResults(results, geocoding.results);
 
     if (results.length < MIN_RESULTS_BEFORE_PLACES) {
@@ -751,17 +774,30 @@ module.exports = async function handler(req, res) {
         return;
       }
 
+      sourceSummaries.push({
+        reachedLimit: places.reachedLimit,
+      });
       results = mergeResults(results, places.results);
     }
+
+    const offset = offsetValidation.offset;
+    const totalResults = results.length;
+    const pagedResults = paginateResults(results, offset);
+    const hasMore = hasNextPage(totalResults, offset);
 
     sendJson(res, 200, {
       ok: true,
       query: queryValidation.query,
-      offset: 0,
-      limit: PUBLIC_LIMIT,
-      results,
-      hasMore: false,
-      nextOffset: null,
+      offset,
+      limit: PAGE_LIMIT,
+      totalResults,
+      results: pagedResults,
+      hasMore,
+      nextOffset: hasMore ? offset + PAGE_LIMIT : null,
+      truncated: wasAggregationTruncated(
+        results,
+        sourceSummaries
+      ),
     });
   } catch (error) {
     if (error && error.name === "AbortError") {
