@@ -22,6 +22,18 @@ const PUBLIC_LIMIT = 40;
 const MIN_RESULTS_BEFORE_PLACES = 5;
 const PLACES_CATEGORIES =
   "catering,commercial.food_and_drink,commercial.marketplace,commercial.shopping_mall,commercial.department_store,entertainment,leisure,tourism,activity.events_venue,beach";
+const ALLOWED_CATEGORY_PREFIXES = [
+  "catering",
+  "commercial.food_and_drink",
+  "commercial.marketplace",
+  "commercial.shopping_mall",
+  "commercial.department_store",
+  "entertainment",
+  "leisure",
+  "tourism",
+  "activity.events_venue",
+  "beach",
+];
 const KAOHSIUNG_FILTER =
   "countrycode:tw|rect:120.0,22.45,120.95,23.55";
 const KAOHSIUNG_BIAS = "proximity:120.3014,22.6273";
@@ -313,56 +325,69 @@ function isKaohsiungResult(properties) {
   );
 }
 
-function extractDistrict(...values) {
-  const text = values
-    .map(normalizeText)
-    .filter(Boolean)
-    .join(" ");
+function findKaohsiungDistrict(value) {
+  const text = normalizeText(value);
 
-  for (const district of KAOHSIUNG_DISTRICTS) {
-    if (text.includes(district)) {
+  return (
+    KAOHSIUNG_DISTRICTS.find((district) =>
+      text.includes(district)
+    ) || ""
+  );
+}
+
+function resolveKaohsiungDistrict(properties) {
+  const fields = [
+    properties.district,
+    properties.city,
+    properties.county,
+    properties.formatted,
+    properties.address_line2,
+  ];
+
+  for (const field of fields) {
+    const district = findKaohsiungDistrict(field);
+
+    if (district) {
       return district;
     }
   }
 
-  const match = text.match(/([\u4e00-\u9fa5]{1,3}區)/);
-
-  return match ? match[1] : "";
+  return "其他高雄地區";
 }
 
-function readDistrict(properties) {
-  const extracted = extractDistrict(
-    properties.formatted,
-    properties.address_line2,
-    properties.suburb,
-    properties.district,
-    properties.city
-  );
+function isAllowedCategory(category) {
+  if (typeof category !== "string") {
+    return false;
+  }
 
-  return (
-    extracted ||
-    toText(properties.district) ||
-    toText(properties.suburb) ||
-    toText(properties.city)
+  return ALLOWED_CATEGORY_PREFIXES.some((prefix) =>
+    category === prefix ||
+    category.startsWith(`${prefix}.`)
   );
 }
 
 function normalizeCategories(properties) {
+  let categories = [];
+
   if (Array.isArray(properties.categories)) {
-    return properties.categories.filter(
-      (category) => typeof category === "string"
+    categories = properties.categories.filter(
+      (category) => typeof category === "string" &&
+        isAllowedCategory(category)
     );
+  } else if (typeof properties.category === "string") {
+    categories = isAllowedCategory(properties.category)
+      ? [properties.category]
+      : [];
   }
 
-  if (typeof properties.category === "string") {
-    return [properties.category];
-  }
+  return categories;
+}
 
-  if (typeof properties.categories === "string") {
-    return [properties.categories];
-  }
-
-  return [];
+function hasAllowedDestinationCategory(categories) {
+  return (
+    Array.isArray(categories) &&
+    categories.some(isAllowedCategory)
+  );
 }
 
 function toRadians(degrees) {
@@ -482,16 +507,22 @@ function normalizeResult(properties, feature) {
     return null;
   }
 
+  const categories = normalizeCategories(properties);
+
+  if (!hasAllowedDestinationCategory(categories)) {
+    return null;
+  }
+
   return {
     placeId: toText(properties.place_id),
     name: toText(properties.name),
     formatted: toText(properties.formatted),
     addressLine1: toText(properties.address_line1),
     addressLine2: toText(properties.address_line2),
-    district: readDistrict(properties),
+    district: resolveKaohsiungDistrict(properties),
     latitude,
     longitude,
-    categories: normalizeCategories(properties),
+    categories,
   };
 }
 
