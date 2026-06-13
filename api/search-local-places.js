@@ -1,3 +1,9 @@
+const GEOAPIFY_AUTOCOMPLETE_URL =
+  "https://api.geoapify.com/v1/geocode/autocomplete";
+
+const GEOAPIFY_SEARCH_URL =
+  "https://api.geoapify.com/v1/geocode/search";
+
 const GEOAPIFY_PLACES_URL =
   "https://api.geoapify.com/v2/places";
 
@@ -9,10 +15,56 @@ const KAOHSIUNG_BOUNDS = Object.freeze({
 });
 
 const REQUEST_TIMEOUT_MS = 8000;
-const UPSTREAM_LIMIT = 20;
-const MAX_OFFSET = 500;
+const AUTOCOMPLETE_LIMIT = 20;
+const GEOCODING_LIMIT = 40;
+const PLACES_LIMIT = 20;
+const PUBLIC_LIMIT = 40;
+const MIN_RESULTS_BEFORE_PLACES = 5;
 const PLACES_CATEGORIES =
   "catering,commercial.food_and_drink,commercial.marketplace,commercial.shopping_mall,commercial.department_store,entertainment,leisure,tourism,activity.events_venue,beach";
+const KAOHSIUNG_FILTER =
+  "countrycode:tw|rect:120.0,22.45,120.95,23.55";
+const KAOHSIUNG_BIAS = "proximity:120.3014,22.6273";
+const KAOHSIUNG_DISTRICTS = [
+  "鹽埕區",
+  "鼓山區",
+  "左營區",
+  "楠梓區",
+  "三民區",
+  "新興區",
+  "前金區",
+  "苓雅區",
+  "前鎮區",
+  "旗津區",
+  "小港區",
+  "鳳山區",
+  "林園區",
+  "大寮區",
+  "大樹區",
+  "大社區",
+  "仁武區",
+  "鳥松區",
+  "岡山區",
+  "橋頭區",
+  "燕巢區",
+  "田寮區",
+  "阿蓮區",
+  "路竹區",
+  "湖內區",
+  "茄萣區",
+  "永安區",
+  "彌陀區",
+  "梓官區",
+  "旗山區",
+  "美濃區",
+  "六龜區",
+  "甲仙區",
+  "杉林區",
+  "內門區",
+  "茂林區",
+  "桃源區",
+  "那瑪夏區",
+];
 
 function setCorsHeaders(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -95,14 +147,18 @@ function validateOffset(value) {
 
   const offset = Number(rawValue);
 
-  if (
-    !Number.isSafeInteger(offset) ||
-    offset < 0 ||
-    offset > MAX_OFFSET
-  ) {
+  if (!Number.isSafeInteger(offset) || offset < 0) {
     return {
       ok: false,
       offset: 0,
+    };
+  }
+
+  if (offset > 0) {
+    return {
+      ok: false,
+      offset,
+      unsupported: true,
     };
   }
 
@@ -112,7 +168,41 @@ function validateOffset(value) {
   };
 }
 
-function buildGeoapifyUrl(query, offset, apiKey) {
+function buildAutocompleteUrl(query, apiKey) {
+  const url = new URL(GEOAPIFY_AUTOCOMPLETE_URL);
+
+  url.search = new URLSearchParams({
+    text: query,
+    type: "amenity",
+    lang: "zh",
+    format: "json",
+    limit: String(AUTOCOMPLETE_LIMIT),
+    filter: KAOHSIUNG_FILTER,
+    bias: KAOHSIUNG_BIAS,
+    apiKey,
+  }).toString();
+
+  return url;
+}
+
+function buildGeocodingUrl(query, apiKey) {
+  const url = new URL(GEOAPIFY_SEARCH_URL);
+
+  url.search = new URLSearchParams({
+    text: query,
+    type: "amenity",
+    lang: "zh",
+    format: "json",
+    limit: String(GEOCODING_LIMIT),
+    filter: KAOHSIUNG_FILTER,
+    bias: KAOHSIUNG_BIAS,
+    apiKey,
+  }).toString();
+
+  return url;
+}
+
+function buildPlacesUrl(query, apiKey) {
   const url = new URL(GEOAPIFY_PLACES_URL);
 
   url.search = new URLSearchParams({
@@ -120,8 +210,7 @@ function buildGeoapifyUrl(query, offset, apiKey) {
     name: query,
     categories: PLACES_CATEGORIES,
     filter: "rect:120.0,22.45,120.95,23.55",
-    limit: String(UPSTREAM_LIMIT),
-    offset: String(offset),
+    limit: String(PLACES_LIMIT),
     lang: "zh",
   }).toString();
 
@@ -224,6 +313,58 @@ function isKaohsiungResult(properties) {
   );
 }
 
+function extractDistrict(...values) {
+  const text = values
+    .map(normalizeText)
+    .filter(Boolean)
+    .join(" ");
+
+  for (const district of KAOHSIUNG_DISTRICTS) {
+    if (text.includes(district)) {
+      return district;
+    }
+  }
+
+  const match = text.match(/([\u4e00-\u9fa5]{1,3}區)/);
+
+  return match ? match[1] : "";
+}
+
+function readDistrict(properties) {
+  const extracted = extractDistrict(
+    properties.formatted,
+    properties.address_line2,
+    properties.suburb,
+    properties.district,
+    properties.city
+  );
+
+  return (
+    extracted ||
+    toText(properties.district) ||
+    toText(properties.suburb) ||
+    toText(properties.city)
+  );
+}
+
+function normalizeCategories(properties) {
+  if (Array.isArray(properties.categories)) {
+    return properties.categories.filter(
+      (category) => typeof category === "string"
+    );
+  }
+
+  if (typeof properties.category === "string") {
+    return [properties.category];
+  }
+
+  if (typeof properties.categories === "string") {
+    return [properties.categories];
+  }
+
+  return [];
+}
+
 function toRadians(degrees) {
   return (degrees * Math.PI) / 180;
 }
@@ -285,10 +426,15 @@ function isDuplicate(item, accepted) {
   });
 }
 
-function dedupeResults(results) {
-  const accepted = [];
+function mergeResults(existing, additions) {
+  const accepted = existing.map((item) => ({
+    ...item,
+    _placeIdKey: normalizeText(item.placeId),
+    _nameKey: normalizeDedupeText(item.name),
+    _addressKey: buildAddressKey(item),
+  }));
 
-  for (const item of results) {
+  for (const item of additions) {
     if (isDuplicate(item, accepted)) {
       continue;
     }
@@ -301,25 +447,21 @@ function dedupeResults(results) {
     });
   }
 
-  return accepted.map((item) => {
-    const {
-      _placeIdKey,
-      _nameKey,
-      _addressKey,
-      ...publicItem
-    } = item;
+  return accepted
+    .slice(0, PUBLIC_LIMIT)
+    .map((item) => {
+      const {
+        _placeIdKey,
+        _nameKey,
+        _addressKey,
+        ...publicItem
+      } = item;
 
-    return publicItem;
-  });
+      return publicItem;
+    });
 }
 
-function normalizeResult(feature) {
-  const properties = readFeatureProperties(feature);
-
-  if (!properties) {
-    return null;
-  }
-
+function normalizeResult(properties, feature) {
   const latitude = readLatitude(properties, feature);
   const longitude = readLongitude(properties, feature);
 
@@ -346,20 +488,32 @@ function normalizeResult(feature) {
     formatted: toText(properties.formatted),
     addressLine1: toText(properties.address_line1),
     addressLine2: toText(properties.address_line2),
-    district:
-      toText(properties.district) ||
-      toText(properties.city),
+    district: readDistrict(properties),
     latitude,
     longitude,
-    categories: Array.isArray(properties.categories)
-      ? properties.categories.filter(
-          (category) => typeof category === "string"
-        )
-      : [],
+    categories: normalizeCategories(properties),
   };
 }
 
-function normalizeResults(payload) {
+function normalizeGeocodingResults(payload) {
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    !Array.isArray(payload.results)
+  ) {
+    return null;
+  }
+
+  return payload.results
+    .map((item) =>
+      item && typeof item === "object"
+        ? normalizeResult(item, null)
+        : null
+    )
+    .filter(Boolean);
+}
+
+function normalizePlacesResults(payload) {
   if (
     !payload ||
     typeof payload !== "object" ||
@@ -368,11 +522,15 @@ function normalizeResults(payload) {
     return null;
   }
 
-  return dedupeResults(
-    payload.features
-      .map(normalizeResult)
-      .filter(Boolean)
-  );
+  return payload.features
+    .map((feature) => {
+      const properties = readFeatureProperties(feature);
+
+      return properties
+        ? normalizeResult(properties, feature)
+        : null;
+    })
+    .filter(Boolean);
 }
 
 function logError(type, statusCode) {
@@ -380,6 +538,86 @@ function logError(type, statusCode) {
     type,
     statusCode: statusCode || null,
   });
+}
+
+async function fetchJson(url) {
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    },
+    REQUEST_TIMEOUT_MS
+  );
+
+  if (!response.ok) {
+    logError("upstream_status", response.status);
+    return {
+      ok: false,
+      statusCode: 502,
+    };
+  }
+
+  try {
+    return {
+      ok: true,
+      payload: await response.json(),
+    };
+  } catch (error) {
+    logError("invalid_json");
+    return {
+      ok: false,
+      statusCode: 502,
+    };
+  }
+}
+
+async function fetchGeocodingSource(url) {
+  const response = await fetchJson(url);
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const results = normalizeGeocodingResults(response.payload);
+
+  if (results === null) {
+    logError("invalid_payload");
+    return {
+      ok: false,
+      statusCode: 502,
+    };
+  }
+
+  return {
+    ok: true,
+    results,
+  };
+}
+
+async function fetchPlacesSource(url) {
+  const response = await fetchJson(url);
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const results = normalizePlacesResults(response.payload);
+
+  if (results === null) {
+    logError("invalid_payload");
+    return {
+      ok: false,
+      statusCode: 502,
+    };
+  }
+
+  return {
+    ok: true,
+    results,
+  };
 }
 
 module.exports = async function handler(req, res) {
@@ -419,7 +657,9 @@ module.exports = async function handler(req, res) {
   if (!offsetValidation.ok) {
     sendJson(res, 400, {
       ok: false,
-      message: "Invalid search offset.",
+      message: offsetValidation.unsupported
+        ? "目前搜尋模式尚未支援載入更多結果。"
+        : "Invalid search offset.",
     });
     return;
   }
@@ -437,86 +677,60 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const upstreamUrl = buildGeoapifyUrl(
-      queryValidation.query,
-      offsetValidation.offset,
-      apiKey
+    let results = [];
+
+    const autocomplete = await fetchGeocodingSource(
+      buildAutocompleteUrl(queryValidation.query, apiKey)
     );
 
-    const response = await fetchWithTimeout(
-      upstreamUrl,
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-      },
-      REQUEST_TIMEOUT_MS
+    if (!autocomplete.ok) {
+      sendJson(res, autocomplete.statusCode, {
+        ok: false,
+        message: "Local place search failed.",
+      });
+      return;
+    }
+
+    results = mergeResults(results, autocomplete.results);
+
+    const geocoding = await fetchGeocodingSource(
+      buildGeocodingUrl(queryValidation.query, apiKey)
     );
 
-    if (!response.ok) {
-      logError("upstream_status", response.status);
-
-      sendJson(res, 502, {
+    if (!geocoding.ok) {
+      sendJson(res, geocoding.statusCode, {
         ok: false,
         message: "Local place search failed.",
       });
       return;
     }
 
-    let payload;
+    results = mergeResults(results, geocoding.results);
 
-    try {
-      payload = await response.json();
-    } catch (error) {
-      logError("invalid_json");
+    if (results.length < MIN_RESULTS_BEFORE_PLACES) {
+      const places = await fetchPlacesSource(
+        buildPlacesUrl(queryValidation.query, apiKey)
+      );
 
-      sendJson(res, 502, {
-        ok: false,
-        message: "Local place search failed.",
-      });
-      return;
+      if (!places.ok) {
+        sendJson(res, places.statusCode, {
+          ok: false,
+          message: "Local place search failed.",
+        });
+        return;
+      }
+
+      results = mergeResults(results, places.results);
     }
-
-    if (
-      !payload ||
-      typeof payload !== "object" ||
-      !Array.isArray(payload.features)
-    ) {
-      logError("invalid_payload");
-
-      sendJson(res, 502, {
-        ok: false,
-        message: "Local place search failed.",
-      });
-      return;
-    }
-
-    const results = normalizeResults(payload);
-
-    if (results === null) {
-      logError("invalid_payload");
-
-      sendJson(res, 502, {
-        ok: false,
-        message: "Local place search failed.",
-      });
-      return;
-    }
-
-    const hasMore =
-      payload.features.length === UPSTREAM_LIMIT;
 
     sendJson(res, 200, {
       ok: true,
       query: queryValidation.query,
-      offset: offsetValidation.offset,
-      limit: UPSTREAM_LIMIT,
+      offset: 0,
+      limit: PUBLIC_LIMIT,
       results,
-      hasMore,
-      nextOffset: hasMore
-        ? offsetValidation.offset + payload.features.length
-        : null,
+      hasMore: false,
+      nextOffset: null,
     });
   } catch (error) {
     if (error && error.name === "AbortError") {
